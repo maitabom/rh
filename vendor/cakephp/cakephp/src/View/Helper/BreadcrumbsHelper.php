@@ -1,16 +1,16 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         3.3.6
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\View\Helper;
 
@@ -25,7 +25,6 @@ use LogicException;
  */
 class BreadcrumbsHelper extends Helper
 {
-
     use StringTemplateTrait;
 
     /**
@@ -45,8 +44,8 @@ class BreadcrumbsHelper extends Helper
             'wrapper' => '<ul{{attrs}}>{{content}}</ul>',
             'item' => '<li{{attrs}}><a href="{{url}}"{{innerAttrs}}>{{title}}</a></li>{{separator}}',
             'itemWithoutLink' => '<li{{attrs}}><span{{innerAttrs}}>{{title}}</span></li>{{separator}}',
-            'separator' => '<li{{attrs}}><span{{innerAttrs}}>{{separator}}</span></li>'
-        ]
+            'separator' => '<li{{attrs}}><span{{innerAttrs}}>{{separator}}</span></li>',
+        ],
     ];
 
     /**
@@ -92,7 +91,7 @@ class BreadcrumbsHelper extends Helper
     /**
      * Prepend a crumb to the start of the queue.
      *
-     * @param string $title If provided as a string, it represents the title of the crumb.
+     * @param string|array $title If provided as a string, it represents the title of the crumb.
      * Alternatively, if you want to add multiple crumbs at once, you can provide an array, with each values being a
      * single crumb. Arrays are expected to be of this form:
      * - *title* The title of the crumb
@@ -142,7 +141,7 @@ class BreadcrumbsHelper extends Helper
      * the link)
      * - *templateVars*: Specific template vars in case you override the templates provided.
      * @return $this
-     * @throws LogicException In case the index is out of bound
+     * @throws \LogicException In case the index is out of bound
      */
     public function insertAt($index, $title, $url = null, array $options = [])
     {
@@ -171,7 +170,7 @@ class BreadcrumbsHelper extends Helper
      * the link)
      * - *templateVars*: Specific template vars in case you override the templates provided.
      * @return $this
-     * @throws LogicException In case the matching crumb can not be found
+     * @throws \LogicException In case the matching crumb can not be found
      */
     public function insertBefore($matchingTitle, $title, $url = null, array $options = [])
     {
@@ -200,7 +199,7 @@ class BreadcrumbsHelper extends Helper
      * the link)
      * - *templateVars*: Specific template vars in case you override the templates provided.
      * @return $this
-     * @throws LogicException In case the matching crumb can not be found.
+     * @throws \LogicException In case the matching crumb can not be found.
      */
     public function insertAfter($matchingTitle, $title, $url = null, array $options = [])
     {
@@ -292,7 +291,7 @@ class BreadcrumbsHelper extends Helper
                 'title' => $title,
                 'url' => $url,
                 'separator' => '',
-                'templateVars' => isset($options['templateVars']) ? $options['templateVars'] : []
+                'templateVars' => isset($options['templateVars']) ? $options['templateVars'] : [],
             ];
 
             if (!$url) {
@@ -309,7 +308,7 @@ class BreadcrumbsHelper extends Helper
         $crumbTrail = $this->formatTemplate('wrapper', [
             'content' => $crumbTrail,
             'attrs' => $templater->formatAttributes($attributes, ['templateVars']),
-            'templateVars' => isset($attributes['templateVars']) ? $attributes['templateVars'] : []
+            'templateVars' => isset($attributes['templateVars']) ? $attributes['templateVars'] : [],
         ]);
 
         return $crumbTrail;

@@ -1,25 +1,27 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         3.0.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Database;
 
 /*
  * Represents a class that holds a TypeMap object
  */
+/**
+ * Trait TypeMapTrait
+ */
 trait TypeMapTrait
 {
-
     /**
      * @var \Cake\Database\TypeMap
      */
@@ -62,6 +64,10 @@ trait TypeMapTrait
      */
     public function typeMap($typeMap = null)
     {
+        deprecationWarning(
+            'TypeMapTrait::typeMap() is deprecated. ' .
+            'Use TypeMapTrait::setTypeMap()/getTypeMap() instead.'
+        );
         if ($typeMap !== null) {
             return $this->setTypeMap($typeMap);
         }
@@ -70,10 +76,18 @@ trait TypeMapTrait
     }
 
     /**
-     * Allows setting default types when chaining query.
+     * Overwrite the default type mappings for fields
+     * in the implementing object.
+     *
+     * This method is useful if you need to set type mappings that are shared across
+     * multiple functions/expressions in a query.
+     *
+     * To add a default without overwriting existing ones
+     * use `getTypeMap()->addDefaults()`
      *
      * @param array $types The array of types to set.
      * @return $this
+     * @see \Cake\Database\TypeMap::setDefaults()
      */
     public function setDefaultTypes(array $types)
     {
@@ -101,6 +115,10 @@ trait TypeMapTrait
      */
     public function defaultTypes(array $types = null)
     {
+        deprecationWarning(
+            'TypeMapTrait::defaultTypes() is deprecated. ' .
+            'Use TypeMapTrait::setDefaultTypes()/getDefaultTypes() instead.'
+        );
         if ($types !== null) {
             return $this->setDefaultTypes($types);
         }

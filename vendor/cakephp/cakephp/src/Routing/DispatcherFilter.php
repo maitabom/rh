@@ -1,16 +1,16 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         2.2.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Routing;
 
@@ -65,7 +65,6 @@ use InvalidArgumentException;
  */
 class DispatcherFilter implements EventListenerInterface
 {
-
     use InstanceConfigTrait;
 
     /**
@@ -121,11 +120,11 @@ class DispatcherFilter implements EventListenerInterface
         return [
             'Dispatcher.beforeDispatch' => [
                 'callable' => 'handle',
-                'priority' => $this->_config['priority']
+                'priority' => $this->_config['priority'],
             ],
             'Dispatcher.afterDispatch' => [
                 'callable' => 'handle',
-                'priority' => $this->_config['priority']
+                'priority' => $this->_config['priority'],
             ],
         ];
     }
@@ -156,13 +155,13 @@ class DispatcherFilter implements EventListenerInterface
      */
     public function matches(Event $event)
     {
-        /* @var \Cake\Http\ServerRequest $request */
+        /** @var \Cake\Http\ServerRequest $request */
         $request = $event->getData('request');
         $pass = true;
         if (!empty($this->_config['for'])) {
             $len = strlen('preg:');
             $for = $this->_config['for'];
-            $url = $request->here(false);
+            $url = $request->getRequestTarget();
             if (substr($for, 0, $len) === 'preg:') {
                 $pass = (bool)preg_match(substr($for, $len), $url);
             } else {

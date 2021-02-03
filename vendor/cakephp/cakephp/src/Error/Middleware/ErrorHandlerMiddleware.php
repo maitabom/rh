@@ -1,25 +1,29 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         3.3.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Error\Middleware;
 
 use Cake\Core\App;
 use Cake\Core\Configure;
+use Cake\Core\Exception\Exception as CakeException;
 use Cake\Core\InstanceConfigTrait;
 use Cake\Error\ExceptionRenderer;
+use Cake\Error\PHP7ErrorException;
 use Cake\Log\Log;
+use Error;
 use Exception;
+use Throwable;
 
 /**
  * Error handling middleware.
@@ -55,7 +59,7 @@ class ErrorHandlerMiddleware
     /**
      * Exception render.
      *
-     * @var \Cake\Error\ExceptionRendererInterface|string|null
+     * @var \Cake\Error\ExceptionRendererInterface|callable|string|null
      */
     protected $exceptionRenderer;
 
@@ -76,6 +80,10 @@ class ErrorHandlerMiddleware
 
         $config = $config ?: Configure::read('Error');
         $this->setConfig($config);
+
+        if (PHP_VERSION_ID >= 70400 && Configure::read('debug')) {
+            ini_set('zend.exception_ignore_args', 0);
+        }
     }
 
     /**
@@ -90,8 +98,10 @@ class ErrorHandlerMiddleware
     {
         try {
             return $next($request, $response);
-        } catch (\Exception $e) {
-            return $this->handleException($e, $request, $response);
+        } catch (Throwable $exception) {
+            return $this->handleException($exception, $request, $response);
+        } catch (Exception $exception) {
+            return $this->handleException($exception, $request, $response);
         }
     }
 
@@ -105,35 +115,53 @@ class ErrorHandlerMiddleware
      */
     public function handleException($exception, $request, $response)
     {
-        $renderer = $this->getRenderer($exception);
+        $renderer = $this->getRenderer($exception, $request);
         try {
             $res = $renderer->render();
             $this->logException($request, $exception);
 
             return $res;
-        } catch (\Exception $e) {
-            $this->logException($request, $e);
-
-            $body = $response->getBody();
-            $body->write('An Internal Server Error Occurred');
-            $response = $response->withStatus(500)
-                ->withBody($body);
+        } catch (Throwable $exception) {
+            $this->logException($request, $exception);
+            $response = $this->handleInternalError($response);
+        } catch (Exception $exception) {
+            $this->logException($request, $exception);
+            $response = $this->handleInternalError($response);
         }
 
         return $response;
     }
 
     /**
+     * @param \Psr\Http\Message\ResponseInterface $response The response
+     * @return \Psr\Http\Message\ResponseInterface A response
+     */
+    protected function handleInternalError($response)
+    {
+        $body = $response->getBody();
+        $body->write('An Internal Server Error Occurred');
+
+        return $response->withStatus(500)
+            ->withBody($body);
+    }
+
+    /**
      * Get a renderer instance
      *
      * @param \Exception $exception The exception being rendered.
+     * @param \Psr\Http\Message\ServerRequestInterface $request The request.
      * @return \Cake\Error\ExceptionRendererInterface The exception renderer.
      * @throws \Exception When the renderer class cannot be found.
      */
-    protected function getRenderer($exception)
+    protected function getRenderer($exception, $request)
     {
         if (!$this->exceptionRenderer) {
             $this->exceptionRenderer = $this->getConfig('exceptionRenderer') ?: ExceptionRenderer::class;
+        }
+
+        // For PHP5 backwards compatibility
+        if ($exception instanceof Error) {
+            $exception = new PHP7ErrorException($exception);
         }
 
         if (is_string($this->exceptionRenderer)) {
@@ -145,11 +173,11 @@ class ErrorHandlerMiddleware
                 ));
             }
 
-            return new $class($exception);
+            return new $class($exception, $request);
         }
         $factory = $this->exceptionRenderer;
 
-        return $factory($exception);
+        return $factory($exception, $request);
     }
 
     /**
@@ -165,12 +193,9 @@ class ErrorHandlerMiddleware
             return;
         }
 
-        $skipLog = $this->getConfig('skipLog');
-        if ($skipLog) {
-            foreach ((array)$skipLog as $class) {
-                if ($exception instanceof $class) {
-                    return;
-                }
+        foreach ((array)$this->getConfig('skipLog') as $class) {
+            if ($exception instanceof $class) {
+                return;
             }
         }
 
@@ -186,26 +211,51 @@ class ErrorHandlerMiddleware
      */
     protected function getMessage($request, $exception)
     {
-        $message = sprintf(
-            '[%s] %s',
-            get_class($exception),
-            $exception->getMessage()
-        );
-        $debug = Configure::read('debug');
+        $message = $this->getMessageForException($exception);
 
-        if ($debug && method_exists($exception, 'getAttributes')) {
-            $attributes = $exception->getAttributes();
-            if ($attributes) {
-                $message .= "\nException Attributes: " . var_export($exception->getAttributes(), true);
-            }
-        }
         $message .= "\nRequest URL: " . $request->getRequestTarget();
         $referer = $request->getHeaderLine('Referer');
         if ($referer) {
             $message .= "\nReferer URL: " . $referer;
         }
+        $message .= "\n\n";
+
+        return $message;
+    }
+
+    /**
+     * Generate the message for the exception
+     *
+     * @param \Exception $exception The exception to log a message for.
+     * @param bool $isPrevious False for original exception, true for previous
+     * @return string Error message
+     */
+    protected function getMessageForException($exception, $isPrevious = false)
+    {
+        $message = sprintf(
+            '%s[%s] %s (%s:%s)',
+            $isPrevious ? "\nCaused by: " : '',
+            get_class($exception),
+            $exception->getMessage(),
+            $exception->getFile(),
+            $exception->getLine()
+        );
+        $debug = Configure::read('debug');
+
+        if ($debug && $exception instanceof CakeException) {
+            $attributes = $exception->getAttributes();
+            if ($attributes) {
+                $message .= "\nException Attributes: " . var_export($exception->getAttributes(), true);
+            }
+        }
+
         if ($this->getConfig('trace')) {
-            $message .= "\nStack Trace:\n" . $exception->getTraceAsString() . "\n\n";
+            $message .= "\n" . $exception->getTraceAsString();
+        }
+
+        $previous = $exception->getPrevious();
+        if ($previous) {
+            $message .= $this->getMessageForException($previous, true);
         }
 
         return $message;

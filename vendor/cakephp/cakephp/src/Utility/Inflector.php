@@ -1,16 +1,16 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         0.2.9
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Utility;
 
@@ -20,11 +20,10 @@ namespace Cake\Utility;
  * Inflector pluralizes and singularizes English nouns.
  * Used by CakePHP's naming conventions throughout the framework.
  *
- * @link http://book.cakephp.org/3.0/en/core-libraries/inflector.html
+ * @link https://book.cakephp.org/3/en/core-libraries/inflector.html
  */
 class Inflector
 {
-
     /**
      * Plural inflector rules
      *
@@ -95,7 +94,7 @@ class Inflector
         '/(n)ews$/i' => '\1\2ews',
         '/eaus$/' => 'eau',
         '/^(.*us)$/' => '\\1',
-        '/s$/i' => ''
+        '/s$/i' => '',
     ];
 
     /**
@@ -144,7 +143,8 @@ class Inflector
         'goose' => 'geese',
         'foot' => 'feet',
         'foe' => 'foes',
-        'sieve' => 'sieves'
+        'sieve' => 'sieves',
+        'cache' => 'caches',
     ];
 
     /**
@@ -157,7 +157,7 @@ class Inflector
         '.*pox', '.*sheep', 'people', 'feedback', 'stadia', '.*?media',
         'chassis', 'clippers', 'debris', 'diabetes', 'equipment', 'gallows',
         'graffiti', 'headquarters', 'information', 'innings', 'news', 'nexus',
-        'pokemon', 'proceedings', 'research', 'sea[- ]bass', 'series', 'species', 'weather'
+        'pokemon', 'proceedings', 'research', 'sea[- ]bass', 'series', 'species', 'weather',
     ];
 
     /**
@@ -416,8 +416,8 @@ class Inflector
      *
      * @param string $type Inflection type
      * @param string $key Original value
-     * @param string|bool $value Inflected value
-     * @return string|bool Inflected value on cache hit or false on cache miss.
+     * @param string|false $value Inflected value
+     * @return string|false Inflected value on cache hit or false on cache miss.
      */
     protected static function _cache($type, $key, $value = false)
     {
@@ -498,7 +498,7 @@ class Inflector
      *
      * @param string $word Word in singular
      * @return string Word in plural
-     * @link http://book.cakephp.org/3.0/en/core-libraries/inflector.html#creating-plural-singular-forms
+     * @link https://book.cakephp.org/3/en/core-libraries/inflector.html#creating-plural-singular-forms
      */
     public static function pluralize($word)
     {
@@ -507,10 +507,17 @@ class Inflector
         }
 
         if (!isset(static::$_cache['irregular']['pluralize'])) {
-            static::$_cache['irregular']['pluralize'] = '(?:' . implode('|', array_keys(static::$_irregular)) . ')';
+            $words = array_keys(static::$_irregular);
+            static::$_cache['irregular']['pluralize'] = '/(.*?(?:\\b|_))(' . implode('|', $words) . ')$/i';
+
+            $upperWords = array_map('ucfirst', $words);
+            static::$_cache['irregular']['upperPluralize'] = '/(.*?(?:\\b|[a-z]))(' . implode('|', $upperWords) . ')$/';
         }
 
-        if (preg_match('/(.*?(?:\\b|_))(' . static::$_cache['irregular']['pluralize'] . ')$/i', $word, $regs)) {
+        if (
+            preg_match(static::$_cache['irregular']['pluralize'], $word, $regs) ||
+            preg_match(static::$_cache['irregular']['upperPluralize'], $word, $regs)
+        ) {
             static::$_cache['pluralize'][$word] = $regs[1] . substr($regs[2], 0, 1) .
                 substr(static::$_irregular[strtolower($regs[2])], 1);
 
@@ -518,10 +525,10 @@ class Inflector
         }
 
         if (!isset(static::$_cache['uninflected'])) {
-            static::$_cache['uninflected'] = '(?:' . implode('|', static::$_uninflected) . ')';
+            static::$_cache['uninflected'] = '/^(' . implode('|', static::$_uninflected) . ')$/i';
         }
 
-        if (preg_match('/^(' . static::$_cache['uninflected'] . ')$/i', $word, $regs)) {
+        if (preg_match(static::$_cache['uninflected'], $word, $regs)) {
             static::$_cache['pluralize'][$word] = $word;
 
             return $word;
@@ -541,7 +548,7 @@ class Inflector
      *
      * @param string $word Word in plural
      * @return string Word in singular
-     * @link http://book.cakephp.org/3.0/en/core-libraries/inflector.html#creating-plural-singular-forms
+     * @link https://book.cakephp.org/3/en/core-libraries/inflector.html#creating-plural-singular-forms
      */
     public static function singularize($word)
     {
@@ -550,21 +557,30 @@ class Inflector
         }
 
         if (!isset(static::$_cache['irregular']['singular'])) {
-            static::$_cache['irregular']['singular'] = '(?:' . implode('|', static::$_irregular) . ')';
+            $wordList = array_values(static::$_irregular);
+            static::$_cache['irregular']['singular'] = '/(.*?(?:\\b|_))(' . implode('|', $wordList) . ')$/i';
+
+            $upperWordList = array_map('ucfirst', $wordList);
+            static::$_cache['irregular']['singularUpper'] = '/(.*?(?:\\b|[a-z]))(' .
+                implode('|', $upperWordList) .
+                ')$/';
         }
 
-        if (preg_match('/(.*?(?:\\b|_))(' . static::$_cache['irregular']['singular'] . ')$/i', $word, $regs)) {
+        if (
+            preg_match(static::$_cache['irregular']['singular'], $word, $regs) ||
+            preg_match(static::$_cache['irregular']['singularUpper'], $word, $regs)
+        ) {
             static::$_cache['singularize'][$word] = $regs[1] . substr($regs[2], 0, 1) .
-                substr(array_search(strtolower($regs[2]), static::$_irregular), 1);
+                substr(array_search(strtolower($regs[2]), static::$_irregular, true), 1);
 
             return static::$_cache['singularize'][$word];
         }
 
         if (!isset(static::$_cache['uninflected'])) {
-            static::$_cache['uninflected'] = '(?:' . implode('|', static::$_uninflected) . ')';
+            static::$_cache['uninflected'] = '/^(' . implode('|', static::$_uninflected) . ')$/i';
         }
 
-        if (preg_match('/^(' . static::$_cache['uninflected'] . ')$/i', $word, $regs)) {
+        if (preg_match(static::$_cache['uninflected'], $word, $regs)) {
             static::$_cache['pluralize'][$word] = $word;
 
             return $word;
@@ -588,7 +604,7 @@ class Inflector
      * @param string $string String to camelize
      * @param string $delimiter the delimiter in the input string
      * @return string CamelizedStringLikeThis.
-     * @link http://book.cakephp.org/3.0/en/core-libraries/inflector.html#creating-camelcase-and-under-scored-forms
+     * @link https://book.cakephp.org/3/en/core-libraries/inflector.html#creating-camelcase-and-under-scored-forms
      */
     public static function camelize($string, $delimiter = '_')
     {
@@ -611,7 +627,7 @@ class Inflector
      *
      * @param string $string CamelCasedString to be "underscorized"
      * @return string underscore_version of the input string
-     * @link http://book.cakephp.org/3.0/en/core-libraries/inflector.html#creating-camelcase-and-under-scored-forms
+     * @link https://book.cakephp.org/3/en/core-libraries/inflector.html#creating-camelcase-and-under-scored-forms
      */
     public static function underscore($string)
     {
@@ -638,7 +654,7 @@ class Inflector
      * @param string $string String to be humanized
      * @param string $delimiter the character to replace with a space
      * @return string Human-readable string
-     * @link http://book.cakephp.org/3.0/en/core-libraries/inflector.html#creating-human-readable-forms
+     * @link https://book.cakephp.org/3/en/core-libraries/inflector.html#creating-human-readable-forms
      */
     public static function humanize($string, $delimiter = '_')
     {
@@ -684,7 +700,7 @@ class Inflector
      *
      * @param string $className Name of class to get database table name for
      * @return string Name of the database table for given class
-     * @link http://book.cakephp.org/3.0/en/core-libraries/inflector.html#creating-table-and-class-name-forms
+     * @link https://book.cakephp.org/3/en/core-libraries/inflector.html#creating-table-and-class-name-forms
      */
     public static function tableize($className)
     {
@@ -703,7 +719,7 @@ class Inflector
      *
      * @param string $tableName Name of database table to get class name for
      * @return string Class name
-     * @link http://book.cakephp.org/3.0/en/core-libraries/inflector.html#creating-table-and-class-name-forms
+     * @link https://book.cakephp.org/3/en/core-libraries/inflector.html#creating-table-and-class-name-forms
      */
     public static function classify($tableName)
     {
@@ -722,7 +738,7 @@ class Inflector
      *
      * @param string $string String to convert.
      * @return string in variable form
-     * @link http://book.cakephp.org/3.0/en/core-libraries/inflector.html#creating-variable-names
+     * @link https://book.cakephp.org/3/en/core-libraries/inflector.html#creating-variable-names
      */
     public static function variable($string)
     {
@@ -746,10 +762,14 @@ class Inflector
      * @param string $string the string you want to slug
      * @param string $replacement will replace keys in map
      * @return string
-     * @link http://book.cakephp.org/3.0/en/core-libraries/inflector.html#creating-url-safe-strings
+     * @link https://book.cakephp.org/3/en/core-libraries/inflector.html#creating-url-safe-strings
      */
     public static function slug($string, $replacement = '-')
     {
+        deprecationWarning(
+            'Inflector::slug() is deprecated. ' .
+            'Use Text::slug() instead.'
+        );
         $quotedReplacement = preg_quote($replacement, '/');
 
         $map = [
@@ -760,7 +780,7 @@ class Inflector
 
         $string = str_replace(
             array_keys(static::$_transliteration),
-            array_values(static::$_transliteration),
+            static::$_transliteration,
             $string
         );
 

@@ -1,16 +1,16 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         3.0.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Datasource;
 
@@ -24,25 +24,30 @@ use JsonSerializable;
  * In 4.x the following methods will officially be added to the interface:
  *
  * @method $this setHidden(array $properties, $merge = false)
- * @method array getHidden()
+ * @method string[] getHidden()
  * @method $this setVirtual(array $properties, $merge = false)
- * @method array getVirtual()
- * @method $this setDirty($property, $isDirty)
+ * @method string[] getVirtual()
+ * @method string[] getDirty()
+ * @method $this setDirty($property, $isDirty = true)
  * @method bool isDirty($property = null)
+ * @method bool hasErrors($includeNested = true)
  * @method array getErrors()
  * @method array getError($field)
  * @method array setErrors(array $fields, $overwrite = false)
  * @method array setError($field, $errors, $overwrite = false)
- * @method $this setAccess(array $properties, $merge = false)
+ * @method $this setAccess($property, $set)
  * @method bool isAccessible($property)
  * @method $this setSource($source)
- * @method array getSource()
- *
+ * @method string getSource()
+ * @method array extractOriginal(array $properties)
+ * @method array extractOriginalChanged(array $properties)
+ * @method array getVisible()
+ * @method $this setNew($new)
  * @property mixed $id Alias for commonly used primary key.
+ * @method bool[] getAccessible()
  */
 interface EntityInterface extends ArrayAccess, JsonSerializable
 {
-
     /**
      * Sets one or multiple properties to the specified value
      *
@@ -68,7 +73,7 @@ interface EntityInterface extends ArrayAccess, JsonSerializable
      * Returns whether this entity contains a property named $property
      * regardless of if it is empty.
      *
-     * @param string $property The property to check.
+     * @param string|array $property The property to check.
      * @return bool
      */
     public function has($property);
@@ -87,7 +92,7 @@ interface EntityInterface extends ArrayAccess, JsonSerializable
      * If the properties argument is null, the currently hidden properties
      * will be returned. Otherwise the hidden properties will be set.
      *
-     * @param null|array $properties Either an array of properties to hide or null to get properties
+     * @param array|null $properties Either an array of properties to hide or null to get properties
      * @return array|\Cake\Datasource\EntityInterface
      */
     public function hiddenProperties($properties = null);
@@ -98,7 +103,7 @@ interface EntityInterface extends ArrayAccess, JsonSerializable
      * If the properties argument is null, the currently virtual properties
      * will be returned. Otherwise the virtual properties will be set.
      *
-     * @param null|array $properties Either an array of properties to treat as virtual or null to get properties
+     * @param array|null $properties Either an array of properties to treat as virtual or null to get properties
      * @return array|\Cake\Datasource\EntityInterface
      */
     public function virtualProperties($properties = null);
@@ -138,8 +143,9 @@ interface EntityInterface extends ArrayAccess, JsonSerializable
      * When called with no arguments it will return whether or not there are any
      * dirty property in the entity
      *
+     * @deprecated 3.4.0 Use setDirty() and isDirty() instead.
      * @param string|null $property the field to set or check status for
-     * @param null|bool $isDirty true means the property was changed, false means
+     * @param bool|null $isDirty true means the property was changed, false means
      * it was not changed and null will make the function return current state
      * for that property
      * @return bool whether the property was changed or not
@@ -179,6 +185,7 @@ interface EntityInterface extends ArrayAccess, JsonSerializable
      * When used as a setter, this method will return this entity instance for method
      * chaining.
      *
+     * @deprecated 3.4.0 Use setErrors() and getErrors() instead.
      * @param string|array|null $field The field to get errors for.
      * @param string|array|null $errors The errors to be set for $field
      * @param bool $overwrite Whether or not to overwrite pre-existing errors for $field
@@ -193,6 +200,7 @@ interface EntityInterface extends ArrayAccess, JsonSerializable
      * `$entity->accessible('*', true)` means that any property not specified already
      * will be accessible by default.
      *
+     * @deprecated 3.4.0 Use setAccess() and isAccessible() instead.
      * @param string|array $property Either a single or list of properties to change its accessibility.
      * @param bool|null $set true marks the property as accessible, false will
      * mark it as protected.

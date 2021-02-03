@@ -1,23 +1,22 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         3.3.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Http;
 
 use Cake\Core\Configure;
-use Cake\Network\Session;
 use Cake\Utility\Hash;
-use Zend\Diactoros\ServerRequestFactory as BaseFactory;
+use Laminas\Diactoros\ServerRequestFactory as BaseFactory;
 
 /**
  * Factory for making ServerRequest instances.
@@ -42,7 +41,7 @@ abstract class ServerRequestFactory extends BaseFactory
         $uri = static::createUri($server);
         $sessionConfig = (array)Configure::read('Session') + [
             'defaults' => 'php',
-            'cookiePath' => $uri->webroot
+            'cookiePath' => $uri->webroot,
         ];
         $session = Session::create($sessionConfig);
         $request = new ServerRequest([
@@ -55,6 +54,7 @@ abstract class ServerRequestFactory extends BaseFactory
             'webroot' => $uri->webroot,
             'base' => $uri->base,
             'session' => $session,
+            'mergeFilesAsObjects' => Configure::read('App.uploadedFilesAsObjects', false),
         ]);
 
         return $request;
@@ -80,7 +80,7 @@ abstract class ServerRequestFactory extends BaseFactory
      * Build a UriInterface object.
      *
      * Add in some CakePHP specific logic/properties that help
-     * perserve backwards compatibility.
+     * preserve backwards compatibility.
      *
      * @param array $server The server parameters.
      * @param array $headers The normalized headers
@@ -98,6 +98,10 @@ abstract class ServerRequestFactory extends BaseFactory
             $uri = $uri->withPath($pathInfo);
         } else {
             $uri = static::updatePath($base, $uri);
+        }
+
+        if (!$uri->getHost()) {
+            $uri = $uri->withHost('localhost');
         }
 
         // Splat on some extra attributes to save
@@ -127,9 +131,10 @@ abstract class ServerRequestFactory extends BaseFactory
         if (empty($path) || $path === '/' || $path === '//' || $path === '/index.php') {
             $path = '/';
         }
-        $endsWithIndex = '/webroot/index.php';
+        $endsWithIndex = '/' . (Configure::read('App.webroot') ?: 'webroot') . '/index.php';
         $endsWithLength = strlen($endsWithIndex);
-        if (strlen($path) >= $endsWithLength &&
+        if (
+            strlen($path) >= $endsWithLength &&
             substr($path, -$endsWithLength) === $endsWithIndex
         ) {
             $path = '/';
@@ -147,9 +152,14 @@ abstract class ServerRequestFactory extends BaseFactory
      */
     protected static function getBase($uri, $server)
     {
-        $base = $webroot = $baseUrl = null;
-        $config = Configure::read('App');
-        extract($config);
+        $config = (array)Configure::read('App') + [
+            'base' => null,
+            'webroot' => null,
+            'baseUrl' => null,
+        ];
+        $base = $config['base'];
+        $baseUrl = $config['baseUrl'];
+        $webroot = $config['webroot'];
 
         if ($base !== false && $base !== null) {
             return [$base, $base . '/'];

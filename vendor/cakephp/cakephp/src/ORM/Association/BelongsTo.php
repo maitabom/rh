@@ -1,16 +1,16 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         3.0.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\ORM\Association;
 
@@ -30,21 +30,20 @@ use RuntimeException;
  */
 class BelongsTo extends Association
 {
-
     /**
      * Valid strategies for this type of association
      *
-     * @var array
+     * @var string[]
      */
     protected $_validStrategies = [
         self::STRATEGY_JOIN,
-        self::STRATEGY_SELECT
+        self::STRATEGY_SELECT,
     ];
 
     /**
      * Gets the name of the field representing the foreign key to the target table.
      *
-     * @return string
+     * @return string|string[]
      */
     public function getForeignKey()
     {
@@ -111,9 +110,8 @@ class BelongsTo extends Association
      * `$options`
      *
      * @param \Cake\Datasource\EntityInterface $entity an entity from the source table
-     * @param array|\ArrayObject $options options to be passed to the save method in
-     * the target table
-     * @return bool|\Cake\Datasource\EntityInterface false if $entity could not be saved, otherwise it returns
+     * @param array $options options to be passed to the save method in the target table
+     * @return \Cake\Datasource\EntityInterface|false False if $entity could not be saved, otherwise it returns
      * the saved entity
      * @see \Cake\ORM\Table::save()
      */
@@ -144,7 +142,7 @@ class BelongsTo extends Association
      * clause for getting the results on the target table.
      *
      * @param array $options list of options passed to attachTo method
-     * @return array
+     * @return \Cake\Database\Expression\IdentifierExpression[]
      * @throws \RuntimeException if the number of columns in the foreignKey do not
      * match the number of columns in the target table primaryKey
      */
@@ -183,7 +181,7 @@ class BelongsTo extends Association
     /**
      * {@inheritDoc}
      *
-     * @return callable
+     * @return \Closure
      */
     public function eagerLoader(array $options)
     {
@@ -195,7 +193,7 @@ class BelongsTo extends Association
             'bindingKey' => $this->getBindingKey(),
             'strategy' => $this->getStrategy(),
             'associationType' => $this->type(),
-            'finder' => [$this, 'find']
+            'finder' => [$this, 'find'],
         ]);
 
         return $loader->buildEagerLoader($options);

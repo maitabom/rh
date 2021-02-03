@@ -1,16 +1,16 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         3.0.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Database\Expression;
 
@@ -23,6 +23,12 @@ use Cake\Database\ValueBinder;
  */
 class TupleComparison extends Comparison
 {
+    /**
+     * The type to be used for casting the value to a database representation
+     *
+     * @var array
+     */
+    protected $_type;
 
     /**
      * Constructor
@@ -97,7 +103,7 @@ class TupleComparison extends Comparison
             if ($isMulti) {
                 $bound = [];
                 foreach ($value as $k => $val) {
-                    $valType = $multiType ? $type[$k] : $type;
+                    $valType = $multiType && isset($type[$k]) ? $type[$k] : $type;
                     $bound[] = $this->_bindValue($generator, $val, $valType);
                 }
 
@@ -135,19 +141,19 @@ class TupleComparison extends Comparison
      *
      * Callback function receives as its only argument an instance of an ExpressionInterface
      *
-     * @param callable $callable The callable to apply to sub-expressions
+     * @param callable $visitor The callable to apply to sub-expressions
      * @return void
      */
-    public function traverse(callable $callable)
+    public function traverse(callable $visitor)
     {
         foreach ($this->getField() as $field) {
-            $this->_traverseValue($field, $callable);
+            $this->_traverseValue($field, $visitor);
         }
 
         $value = $this->getValue();
         if ($value instanceof ExpressionInterface) {
-            $callable($value);
-            $value->traverse($callable);
+            $visitor($value);
+            $value->traverse($visitor);
 
             return;
         }
@@ -155,10 +161,10 @@ class TupleComparison extends Comparison
         foreach ($value as $i => $val) {
             if ($this->isMulti()) {
                 foreach ($val as $v) {
-                    $this->_traverseValue($v, $callable);
+                    $this->_traverseValue($v, $visitor);
                 }
             } else {
-                $this->_traverseValue($val, $callable);
+                $this->_traverseValue($val, $visitor);
             }
         }
     }

@@ -1,47 +1,64 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         2.0.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Http;
 
 use Cake\Core\Configure;
 use Cake\Filesystem\File;
+use Cake\Filesystem\Folder;
+use Cake\Http\Cookie\Cookie;
+use Cake\Http\Cookie\CookieCollection;
+use Cake\Http\Cookie\CookieInterface;
+use Cake\Http\CorsBuilder;
+use Cake\Http\Exception\NotFoundException;
 use Cake\Log\Log;
-use Cake\Network\CorsBuilder;
-use Cake\Network\Exception\NotFoundException;
 use DateTime;
+use DateTimeInterface;
 use DateTimeZone;
 use InvalidArgumentException;
+use Laminas\Diactoros\MessageTrait;
+use Laminas\Diactoros\Stream;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamInterface;
-use Zend\Diactoros\MessageTrait;
-use Zend\Diactoros\Stream;
 
 /**
- * Cake Response is responsible for managing the response text, status and headers of a HTTP response.
+ * Responses contain the response text, status and headers of a HTTP response.
  *
- * By default controllers will use this class to render their response. If you are going to use
- * a custom response class it should subclass this object in order to ensure compatibility.
+ * There are external packages such as `fig/http-message-util` that provide HTTP
+ * status code constants. These can be used with any method that accepts or
+ * returns a status code integer. Keep in mind that these consants might
+ * include status codes that are now allowed which will throw an
+ * `\InvalidArgumentException`.
  */
 class Response implements ResponseInterface
 {
-
     use MessageTrait;
 
     /**
-     * Holds HTTP response statuses
+     * @var int
+     */
+    const STATUS_CODE_MIN = 100;
+
+    /**
+     * @var int
+     */
+    const STATUS_CODE_MAX = 599;
+
+    /**
+     * Allowed HTTP status codes and their default description.
      *
-     * @var array
+     * @var string[]
      */
     protected $_statusCodes = [
         100 => 'Continue',
@@ -337,7 +354,8 @@ class Response implements ResponseInterface
         'vtt' => 'text/vtt',
         'mkv' => 'video/x-matroska',
         'pkpass' => 'application/vnd.apple.pkpass',
-        'ajax' => 'text/html'
+        'ajax' => 'text/html',
+        'bmp' => 'image/bmp',
     ];
 
     /**
@@ -355,17 +373,9 @@ class Response implements ResponseInterface
     protected $_status = 200;
 
     /**
-     * Content type to send. This can be an 'extension' that will be transformed using the $_mimetypes array
-     * or a complete mime-type
-     *
-     * @var string
-     */
-    protected $_contentType = 'text/html';
-
-    /**
      * File object for file to be read out as response
      *
-     * @var \Cake\Filesystem\File
+     * @var \Cake\Filesystem\File|null
      */
     protected $_file;
 
@@ -392,11 +402,11 @@ class Response implements ResponseInterface
     protected $_cacheDirectives = [];
 
     /**
-     * Holds cookies to be sent to the client
+     * Collection of cookies to send to the client
      *
-     * @var array
+     * @var \Cake\Http\Cookie\CookieCollection
      */
-    protected $_cookies = [];
+    protected $_cookies = null;
 
     /**
      * Reason Phrase
@@ -428,6 +438,7 @@ class Response implements ResponseInterface
      *  - status: the HTTP status code to respond with
      *  - type: a complete mime-type string or an extension mapped in this class
      *  - charset: the charset for the response body
+     * @throws \InvalidArgumentException
      */
     public function __construct(array $options = [])
     {
@@ -446,22 +457,24 @@ class Response implements ResponseInterface
             $this->_createStream();
         }
         if (isset($options['body'])) {
-            $this->body($options['body']);
+            $this->stream->write($options['body']);
         }
         if (isset($options['statusCodes'])) {
             $this->httpCodes($options['statusCodes']);
         }
         if (isset($options['status'])) {
-            $this->statusCode($options['status']);
+            $this->_setStatus($options['status']);
         }
         if (!isset($options['charset'])) {
             $options['charset'] = Configure::read('App.encoding');
         }
         $this->_charset = $options['charset'];
+        $type = 'text/html';
         if (isset($options['type'])) {
-            $this->_contentType = $this->resolveType($options['type']);
+            $type = $this->resolveType($options['type']);
         }
-        $this->_setContentType();
+        $this->_setContentType($type);
+        $this->_cookies = new CookieCollection();
     }
 
     /**
@@ -479,10 +492,12 @@ class Response implements ResponseInterface
      * Will echo out the content in the response body.
      *
      * @return void
-     * @deprecated 3.4.0 Will be removed in 4.0.0
+     * @deprecated 3.4.0 Will be removed in 4.0.0. Use Cake\Http\ResponseEmitter if required
      */
     public function send()
     {
+        deprecationWarning('Response::send() will be removed in 4.0.0');
+
         if ($this->hasHeader('Location') && $this->_status === 200) {
             $this->statusCode(302);
         }
@@ -492,9 +507,10 @@ class Response implements ResponseInterface
 
         if ($this->_file) {
             $this->_sendFile($this->_file, $this->_fileRange);
-            $this->_file = $this->_fileRange = null;
+            $this->_file = null;
+            $this->_fileRange = [];
         } else {
-            $this->_sendContent($this->body());
+            $this->_sendContent($this->getBody());
         }
 
         if (function_exists('fastcgi_finish_request')) {
@@ -510,6 +526,10 @@ class Response implements ResponseInterface
      */
     public function sendHeaders()
     {
+        deprecationWarning(
+            'Will be removed in 4.0.0'
+        );
+
         $file = $line = null;
         if (headers_sent($file, $line)) {
             Log::warning("Headers already sent in {$file}:{$line}");
@@ -520,7 +540,6 @@ class Response implements ResponseInterface
         $codeMessage = $this->_statusCodes[$this->_status];
         $this->_setCookies();
         $this->_sendHeader("{$this->_protocol} {$this->_status} {$codeMessage}");
-        $this->_setContentType();
 
         foreach ($this->headers as $header => $values) {
             foreach ((array)$values as $value) {
@@ -539,15 +558,19 @@ class Response implements ResponseInterface
      */
     protected function _setCookies()
     {
-        foreach ($this->_cookies as $name => $c) {
+        deprecationWarning(
+            'Will be removed in 4.0.0'
+        );
+
+        foreach ($this->_cookies as $cookie) {
             setcookie(
-                $name,
-                $c['value'],
-                $c['expire'],
-                $c['path'],
-                $c['domain'],
-                $c['secure'],
-                $c['httpOnly']
+                $cookie->getName(),
+                $cookie->getValue(),
+                $cookie->getExpiresTimestamp(),
+                $cookie->getPath(),
+                $cookie->getDomain(),
+                $cookie->isSecure(),
+                $cookie->isHttpOnly()
             );
         }
     }
@@ -556,9 +579,10 @@ class Response implements ResponseInterface
      * Formats the Content-Type header based on the configured contentType and charset
      * the charset will only be set in the header if the response is of type text/*
      *
+     * @param string $type The type to set.
      * @return void
      */
-    protected function _setContentType()
+    protected function _setContentType($type)
     {
         if (in_array($this->_status, [304, 204])) {
             $this->_clearHeader('Content-Type');
@@ -566,20 +590,24 @@ class Response implements ResponseInterface
             return;
         }
         $whitelist = [
-            'application/javascript', 'application/json', 'application/xml', 'application/rss+xml'
+            'application/javascript', 'application/xml', 'application/rss+xml',
         ];
 
         $charset = false;
-        if ($this->_charset &&
-            (strpos($this->_contentType, 'text/') === 0 || in_array($this->_contentType, $whitelist))
+        if (
+            $this->_charset &&
+            (
+                strpos($type, 'text/') === 0 ||
+                in_array($type, $whitelist, true)
+            )
         ) {
             $charset = true;
         }
 
-        if ($charset) {
-            $this->_setHeader('Content-Type', "{$this->_contentType}; charset={$this->_charset}");
+        if ($charset && strpos($type, ';') === false) {
+            $this->_setHeader('Content-Type', "{$type}; charset={$this->_charset}");
         } else {
-            $this->_setHeader('Content-Type', "{$this->_contentType}");
+            $this->_setHeader('Content-Type', $type);
         }
     }
 
@@ -591,6 +619,10 @@ class Response implements ResponseInterface
      */
     protected function _setContent()
     {
+        deprecationWarning(
+            'Will be removed in 4.0.0'
+        );
+
         if (in_array($this->_status, [304, 204])) {
             $this->body('');
         }
@@ -606,6 +638,10 @@ class Response implements ResponseInterface
      */
     protected function _sendHeader($name, $value = null)
     {
+        deprecationWarning(
+            'Will be removed in 4.0.0'
+        );
+
         if ($value === null) {
             header($name);
         } else {
@@ -626,6 +662,10 @@ class Response implements ResponseInterface
      */
     protected function _sendContent($content)
     {
+        deprecationWarning(
+            'Will be removed in 4.0.0'
+        );
+
         if (!is_string($content) && is_callable($content)) {
             $content = $content();
         }
@@ -677,6 +717,11 @@ class Response implements ResponseInterface
      */
     public function header($header = null, $value = null)
     {
+        deprecationWarning(
+            'Response::header() is deprecated. ' .
+            'Use `withHeader()`, `getHeaderLine()` and `getHeaders()` instead.'
+        );
+
         if ($header === null) {
             return $this->getSimpleHeaders();
         }
@@ -730,7 +775,7 @@ class Response implements ResponseInterface
      *
      * Get/Set the Location header value.
      *
-     * @param null|string $url Either null to get the current location, or a string to set one.
+     * @param string|null $url Either null to get the current location, or a string to set one.
      * @return string|null When setting the location null will be returned. When reading the location
      *   a string of the current location header value (if any) will be returned.
      * @deprecated 3.4.0 Mutable responses are deprecated. Use `withLocation()` and `getHeaderLine()`
@@ -738,6 +783,11 @@ class Response implements ResponseInterface
      */
     public function location($url = null)
     {
+        deprecationWarning(
+            'Response::location() is deprecated. ' .
+            'Mutable responses are deprecated. Use `withLocation()` and `getHeaderLine()` instead.'
+        );
+
         if ($url === null) {
             $result = $this->getHeaderLine('Location');
             if (!$result) {
@@ -808,11 +858,16 @@ class Response implements ResponseInterface
      * if $content is null the current buffer is returned
      *
      * @param string|callable|null $content the string or callable message to be sent
-     * @return string Current message buffer if $content param is passed as null
-     * @deprecated 3.4.0 Mutable response methods are deprecated. Use `withBody()` and `getBody()` instead.
+     * @return string|null Current message buffer if $content param is passed as null
+     * @deprecated 3.4.0 Mutable response methods are deprecated. Use `withBody()`/`withStringBody()` and `getBody()` instead.
      */
     public function body($content = null)
     {
+        deprecationWarning(
+            'Response::body() is deprecated. ' .
+            'Mutable response methods are deprecated. Use `withBody()` and `getBody()` instead.'
+        );
+
         if ($content === null) {
             if ($this->stream->isSeekable()) {
                 $this->stream->rewind();
@@ -826,7 +881,7 @@ class Response implements ResponseInterface
         }
 
         // Compatibility with closure/streaming responses
-        if (is_callable($content)) {
+        if (!is_string($content) && is_callable($content)) {
             $this->stream = new CallbackStream($content);
         } else {
             $this->_createStream();
@@ -857,8 +912,8 @@ class Response implements ResponseInterface
     }
 
     /**
-     * Sets the HTTP status code to be sent
-     * if $code is null the current code is returned
+     * Sets the HTTP status code to be sent.
+     * If $code is null the current code is returned
      *
      * If the status code is 304 or 204, the existing Content-Type header
      * will be cleared, as these response codes have no body.
@@ -870,17 +925,18 @@ class Response implements ResponseInterface
      */
     public function statusCode($code = null)
     {
+        deprecationWarning(
+            'Response::statusCode() is deprecated. ' .
+            'Use `getStatusCode()` and `withStatus()` instead.'
+        );
+
         if ($code === null) {
             return $this->_status;
         }
         if (!isset($this->_statusCodes[$code])) {
             throw new InvalidArgumentException('Unknown status code');
         }
-        if (isset($this->_statusCodes[$code])) {
-            $this->_reasonPhrase = $this->_statusCodes[$code];
-        }
-        $this->_status = $code;
-        $this->_setContentType();
+        $this->_setStatus($code);
 
         return $code;
     }
@@ -912,9 +968,15 @@ class Response implements ResponseInterface
      * If the status code is 304 or 204, the existing Content-Type header
      * will be cleared, as these response codes have no body.
      *
-     * @link http://tools.ietf.org/html/rfc7231#section-6
-     * @link http://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml
-     * @param int $code The 3-digit integer result code to set.
+     * There are external packages such as `fig/http-message-util` that provide HTTP
+     * status code constants. These can be used with any method that accepts or
+     * returns a status code integer. However, keep in mind that these consants
+     * might include status codes that are now allowed which will throw an
+     * `\InvalidArgumentException`.
+     *
+     * @link https://tools.ietf.org/html/rfc7231#section-6
+     * @link https://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml
+     * @param int $code The 3-digit integer status code to set.
      * @param string $reasonPhrase The reason phrase to use with the
      *     provided status code; if none is provided, implementations MAY
      *     use the defaults as suggested in the HTTP specification.
@@ -924,14 +986,38 @@ class Response implements ResponseInterface
     public function withStatus($code, $reasonPhrase = '')
     {
         $new = clone $this;
-        $new->_status = $code;
-        if (empty($reasonPhrase) && isset($new->_statusCodes[$code])) {
-            $reasonPhrase = $new->_statusCodes[$code];
-        }
-        $new->_reasonPhrase = $reasonPhrase;
-        $new->_setContentType();
+        $new->_setStatus($code, $reasonPhrase);
 
         return $new;
+    }
+
+    /**
+     * Modifier for response status
+     *
+     * @param int $code The status code to set.
+     * @param string $reasonPhrase The response reason phrase.
+     * @return void
+     * @throws \InvalidArgumentException For invalid status code arguments.
+     */
+    protected function _setStatus($code, $reasonPhrase = '')
+    {
+        if ($code < static::STATUS_CODE_MIN || $code > static::STATUS_CODE_MAX) {
+            throw new InvalidArgumentException(sprintf(
+                'Invalid status code: %s. Use a valid HTTP status code in range 1xx - 5xx.',
+                $code
+            ));
+        }
+
+        $this->_status = $code;
+        if ($reasonPhrase === '' && isset($this->_statusCodes[$code])) {
+            $reasonPhrase = $this->_statusCodes[$code];
+        }
+        $this->_reasonPhrase = $reasonPhrase;
+
+        // These status codes don't have bodies and can't have content-types.
+        if (in_array($code, [304, 204], true)) {
+            $this->_clearHeader('Content-Type');
+        }
     }
 
     /**
@@ -943,7 +1029,7 @@ class Response implements ResponseInterface
      * listed in the IANA HTTP Status Code Registry) for the response's
      * status code.
      *
-     * @link http://tools.ietf.org/html/rfc7231#section-6
+     * @link https://tools.ietf.org/html/rfc7231#section-6
      * @link http://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml
      * @return string Reason phrase; must return an empty string if none present.
      */
@@ -978,7 +1064,6 @@ class Response implements ResponseInterface
      *        ]); // throws an exception due to invalid codes
      *
      *        For more on HTTP status codes see: http://www.w3.org/Protocols/rfc2616/rfc2616-sec6.html#sec6.1
-     *
      * @return mixed Associative array of the HTTP codes as keys, and the message
      *    strings as values, or null of the given $code does not exist.
      * @throws \InvalidArgumentException If an attempt is made to add an invalid status code
@@ -986,6 +1071,8 @@ class Response implements ResponseInterface
      */
     public function httpCodes($code = null)
     {
+        deprecationWarning('Response::httpCodes(). Will be removed in 4.0.0');
+
         if (empty($code)) {
             return $this->_statusCodes;
         }
@@ -1039,20 +1126,26 @@ class Response implements ResponseInterface
      * type(['jpg' => 'text/plain']);
      * ```
      *
-     * @param string|null $contentType Content type key.
-     * @return mixed Current content type or false if supplied an invalid content type
+     * @param string|array|null $contentType Content type key.
+     * @return mixed Current content type or false if supplied an invalid content type.
+     * @deprecated 3.5.5 Use getType() or withType() instead.
      */
     public function type($contentType = null)
     {
+        deprecationWarning(
+            'Response::type() is deprecated. ' .
+            'Use setTypeMap(), getType() or withType() instead.'
+        );
+
         if ($contentType === null) {
-            return $this->_contentType;
+            return $this->getType();
         }
         if (is_array($contentType)) {
             foreach ($contentType as $type => $definition) {
                 $this->_mimeTypes[$type] = $definition;
             }
 
-            return $this->_contentType;
+            return $this->getType();
         }
         if (isset($this->_mimeTypes[$contentType])) {
             $contentType = $this->_mimeTypes[$contentType];
@@ -1061,10 +1154,40 @@ class Response implements ResponseInterface
         if (strpos($contentType, '/') === false) {
             return false;
         }
-        $this->_contentType = $contentType;
-        $this->_setContentType();
+        $this->_setContentType($contentType);
 
         return $contentType;
+    }
+
+    /**
+     * Sets a content type definition into the map.
+     *
+     * E.g.: setTypeMap('xhtml', ['application/xhtml+xml', 'application/xhtml'])
+     *
+     * This is needed for RequestHandlerComponent and recognition of types.
+     *
+     * @param string $type Content type.
+     * @param string|array $mimeType Definition of the mime type.
+     * @return void
+     */
+    public function setTypeMap($type, $mimeType)
+    {
+        $this->_mimeTypes[$type] = $mimeType;
+    }
+
+    /**
+     * Returns the current content type.
+     *
+     * @return string
+     */
+    public function getType()
+    {
+        $header = $this->getHeaderLine('Content-Type');
+        if (strpos($header, ';') !== false) {
+            return explode(';', $header)[0];
+        }
+
+        return $header;
     }
 
     /**
@@ -1080,8 +1203,7 @@ class Response implements ResponseInterface
     {
         $mappedType = $this->resolveType($contentType);
         $new = clone $this;
-        $new->_contentType = $mappedType;
-        $new->_setContentType();
+        $new->_setContentType($mappedType);
 
         return $new;
     }
@@ -1112,7 +1234,7 @@ class Response implements ResponseInterface
      * e.g `getMimeType('pdf'); // returns 'application/pdf'`
      *
      * @param string $alias the content type alias to map
-     * @return mixed String mapped mime type or false if $alias is not mapped
+     * @return string|array|false String mapped mime type or false if $alias is not mapped
      */
     public function getMimeType($alias)
     {
@@ -1152,16 +1274,31 @@ class Response implements ResponseInterface
      *
      * @param string|null $charset Character set string.
      * @return string Current charset
-     * @deprecated 3.4.0 Use withCharset() instead.
+     * @deprecated 3.5.0 Use getCharset()/withCharset() instead.
      */
     public function charset($charset = null)
     {
+        deprecationWarning(
+            'Response::charset() is deprecated. ' .
+            'Use getCharset()/withCharset() instead.'
+        );
+
         if ($charset === null) {
             return $this->_charset;
         }
         $this->_charset = $charset;
-        $this->_setContentType();
+        $this->_setContentType($this->getType());
 
+        return $this->_charset;
+    }
+
+    /**
+     * Returns the current charset.
+     *
+     * @return string
+     */
+    public function getCharset()
+    {
         return $this->_charset;
     }
 
@@ -1175,7 +1312,7 @@ class Response implements ResponseInterface
     {
         $new = clone $this;
         $new->_charset = $charset;
-        $new->_setContentType();
+        $new->_setContentType($this->getType());
 
         return $new;
     }
@@ -1184,10 +1321,15 @@ class Response implements ResponseInterface
      * Sets the correct headers to instruct the client to not cache the response
      *
      * @return void
-     * @deprected 3.4.0 Use withDisabledCache() instead.
+     * @deprecated 3.4.0 Use withDisabledCache() instead.
      */
     public function disableCache()
     {
+        deprecationWarning(
+            'Response::disableCache() is deprecated. ' .
+            'Use withDisabledCache() instead.'
+        );
+
         $this->_setHeader('Expires', 'Mon, 26 Jul 1997 05:00:00 GMT');
         $this->_setHeader('Last-Modified', gmdate('D, d M Y H:i:s') . ' GMT');
         $this->_setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0');
@@ -1208,15 +1350,24 @@ class Response implements ResponseInterface
     /**
      * Sets the correct headers to instruct the client to cache the response.
      *
-     * @param string $since a valid time since the response text has not been modified
-     * @param string $time a valid time for cache expiry
+     * @param string|int|\DateTimeInterface|null $since a valid time since the response text has not been modified
+     * @param string|int $time a valid time for cache expiry
      * @return void
+     * @throws \InvalidArgumentException
      * @deprecated 3.4.0 Use withCache() instead.
      */
     public function cache($since, $time = '+1 day')
     {
+        deprecationWarning(
+            'Response::cache() is deprecated. ' .
+            'Use withCache() instead.'
+        );
+
         if (!is_int($time)) {
             $time = strtotime($time);
+            if ($time === false) {
+                throw new InvalidArgumentException('Invalid time parameter. Ensure your time value can be parsed by strtotime');
+            }
         }
 
         $this->_setHeader('Date', gmdate('D, j M Y G:i:s ', time()) . 'GMT');
@@ -1230,14 +1381,18 @@ class Response implements ResponseInterface
     /**
      * Create a new instance with the headers to enable client caching.
      *
-     * @param string $since a valid time since the response text has not been modified
-     * @param string $time a valid time for cache expiry
+     * @param string|int|\DateTimeInterface|null $since A valid time since the response text has not been modified
+     * @param string|int $time A valid time for cache expiry
      * @return static
+     * @throws \InvalidArgumentException
      */
     public function withCache($since, $time = '+1 day')
     {
         if (!is_int($time)) {
             $time = strtotime($time);
+            if ($time === false) {
+                throw new InvalidArgumentException('Invalid time parameter. Ensure your time value can be parsed by strtotime');
+            }
         }
 
         return $this->withHeader('Date', gmdate('D, j M Y G:i:s ', time()) . 'GMT')
@@ -1260,6 +1415,10 @@ class Response implements ResponseInterface
      */
     public function sharable($public = null, $time = null)
     {
+        deprecationWarning(
+            'Response::sharable() is deprecated. ' .
+            'Use withSharable() instead.'
+        );
         if ($public === null) {
             $public = array_key_exists('public', $this->_cacheDirectives);
             $private = array_key_exists('private', $this->_cacheDirectives);
@@ -1317,11 +1476,16 @@ class Response implements ResponseInterface
      * a good candidate to be fetched from a shared cache (like in a proxy server).
      * If called with no parameters, this function will return the current max-age value if any
      *
+     * @deprecated 3.6.5 Use withSharedMaxAge() instead.
      * @param int|null $seconds if null, the method will return the current s-maxage value
      * @return int|null
      */
     public function sharedMaxAge($seconds = null)
     {
+        deprecationWarning(
+            'Response::sharedMaxAge() is deprecated. ' .
+            'Use withSharedMaxAge() instead.'
+        );
         if ($seconds !== null) {
             $this->_cacheDirectives['s-maxage'] = $seconds;
             $this->_setCacheControl();
@@ -1357,11 +1521,16 @@ class Response implements ResponseInterface
      * a good candidate to be fetched from the local (client) cache.
      * If called with no parameters, this function will return the current max-age value if any
      *
+     * @deprecated 3.6.5 Use withMaxAge() instead.
      * @param int|null $seconds if null, the method will return the current max-age value
      * @return int|null
      */
     public function maxAge($seconds = null)
     {
+        deprecationWarning(
+            'Response::maxAge() is deprecated. ' .
+            'Use withMaxAge() instead.'
+        );
         if ($seconds !== null) {
             $this->_cacheDirectives['max-age'] = $seconds;
             $this->_setCacheControl();
@@ -1405,6 +1574,11 @@ class Response implements ResponseInterface
      */
     public function mustRevalidate($enable = null)
     {
+        deprecationWarning(
+            'Response::mustRevalidate() is deprecated. ' .
+            'Use withMustRevalidate() instead.'
+        );
+
         if ($enable !== null) {
             if ($enable) {
                 $this->_cacheDirectives['must-revalidate'] = true;
@@ -1468,12 +1642,17 @@ class Response implements ResponseInterface
      * `$response->expires(new DateTime('+1 day'))` Will set the expiration in next 24 hours
      * `$response->expires()` Will return the current expiration header value
      *
-     * @param string|\DateTime|null $time Valid time string or \DateTime instance.
+     * @param string|int|\DateTimeInterface|null $time Valid time string or \DateTime instance.
      * @return string|null
      * @deprecated 3.4.0 Use withExpires() instead.
      */
     public function expires($time = null)
     {
+        deprecationWarning(
+            'Response::expires() is deprecated. ' .
+            'Use withExpires() instead.'
+        );
+
         if ($time !== null) {
             $date = $this->_getUTCDate($time);
             $this->_setHeader('Expires', $date->format('D, j M Y H:i:s') . ' GMT');
@@ -1499,7 +1678,7 @@ class Response implements ResponseInterface
      * $response->withExpires(new DateTime('+1 day'))
      * ```
      *
-     * @param string|\DateTime $time Valid time string or \DateTime instance.
+     * @param string|int|\DateTimeInterface|null $time Valid time string or \DateTime instance.
      * @return static
      */
     public function withExpires($time)
@@ -1519,12 +1698,17 @@ class Response implements ResponseInterface
      * `$response->modified(new DateTime('+1 day'))` Will set the modification date in the past 24 hours
      * `$response->modified()` Will return the current Last-Modified header value
      *
-     * @param string|\DateTime|null $time Valid time string or \DateTime instance.
+     * @param string|int|\DateTimeInterface|null $time Valid time string or \DateTime instance.
      * @return string|null
      * @deprecated 3.4.0 Use withModified() instead.
      */
     public function modified($time = null)
     {
+        deprecationWarning(
+            'Response::modified() is deprecated. ' .
+            'Use withModified() or getHeaderLine("Last-Modified") instead.'
+        );
+
         if ($time !== null) {
             $date = $this->_getUTCDate($time);
             $this->_setHeader('Last-Modified', $date->format('D, j M Y H:i:s') . ' GMT');
@@ -1550,7 +1734,7 @@ class Response implements ResponseInterface
      * $response->withModified(new DateTime('+1 day'))
      * ```
      *
-     * @param string|\DateTime $time Valid time string or \DateTime instance.
+     * @param string|int|\DateTimeInterface|null $time Valid time string or \DateTimeInterface instance.
      * @return static
      */
     public function withModified($time)
@@ -1565,12 +1749,14 @@ class Response implements ResponseInterface
      * setting the status code to "304 Not Modified" and removing all
      * conflicting headers
      *
+     * *Warning* This method mutates the response in-place and should be avoided.
+     *
      * @return void
      */
     public function notModified()
     {
-        $this->statusCode(304);
-        $this->body('');
+        $this->_createStream();
+        $this->_setStatus(304);
 
         $remove = [
             'Allow',
@@ -1579,10 +1765,10 @@ class Response implements ResponseInterface
             'Content-Length',
             'Content-MD5',
             'Content-Type',
-            'Last-Modified'
+            'Last-Modified',
         ];
         foreach ($remove as $header) {
-            unset($this->headers[$header]);
+            $this->_clearHeader($header);
         }
     }
 
@@ -1606,7 +1792,7 @@ class Response implements ResponseInterface
             'Content-Length',
             'Content-MD5',
             'Content-Type',
-            'Last-Modified'
+            'Last-Modified',
         ];
         foreach ($remove as $header) {
             $new = $new->withoutHeader($header);
@@ -1628,6 +1814,11 @@ class Response implements ResponseInterface
      */
     public function vary($cacheVariances = null)
     {
+        deprecationWarning(
+            'Response::vary() is deprecated. ' .
+            'Use withVary() instead.'
+        );
+
         if ($cacheVariances !== null) {
             $cacheVariances = (array)$cacheVariances;
             $this->_setHeader('Vary', implode(', ', $cacheVariances));
@@ -1680,6 +1871,11 @@ class Response implements ResponseInterface
      */
     public function etag($hash = null, $weak = false)
     {
+        deprecationWarning(
+            'Response::etag() is deprecated. ' .
+            'Use withEtag() or getHeaderLine("Etag") instead.'
+        );
+
         if ($hash !== null) {
             $this->_setHeader('Etag', sprintf('%s"%s"', $weak ? 'W/' : null, $hash));
         }
@@ -1723,21 +1919,20 @@ class Response implements ResponseInterface
      * Returns a DateTime object initialized at the $time param and using UTC
      * as timezone
      *
-     * @param string|int|\DateTime|null $time Valid time string or \DateTime instance.
-     * @return \DateTime
+     * @param string|int|\DateTimeInterface|null $time Valid time string or \DateTimeInterface instance.
+     * @return \DateTimeInterface
      */
     protected function _getUTCDate($time = null)
     {
-        if ($time instanceof DateTime) {
+        if ($time instanceof DateTimeInterface) {
             $result = clone $time;
         } elseif (is_int($time)) {
             $result = new DateTime(date('Y-m-d H:i:s', $time));
         } else {
             $result = new DateTime($time);
         }
-        $result->setTimezone(new DateTimeZone('UTC'));
 
-        return $result;
+        return $result->setTimezone(new DateTimeZone('UTC'));
     }
 
     /**
@@ -1763,7 +1958,7 @@ class Response implements ResponseInterface
     public function outputCompressed()
     {
         return strpos(env('HTTP_ACCEPT_ENCODING'), 'gzip') !== false
-            && (ini_get('zlib.output_compression') === '1' || in_array('ob_gzhandler', ob_list_handlers()));
+            && (ini_get('zlib.output_compression') === '1' || in_array('ob_gzhandler', ob_list_handlers(), true));
     }
 
     /**
@@ -1775,6 +1970,11 @@ class Response implements ResponseInterface
      */
     public function download($filename)
     {
+        deprecationWarning(
+            'Response::download() is deprecated. ' .
+            'Use withDownload() instead.'
+        );
+
         $this->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
     }
 
@@ -1799,6 +1999,11 @@ class Response implements ResponseInterface
      */
     public function protocol($protocol = null)
     {
+        deprecationWarning(
+            'Response::protocol() is deprecated. ' .
+            'Use getProtocolVersion() instead.'
+        );
+
         if ($protocol !== null) {
             $this->_protocol = $protocol;
         }
@@ -1811,11 +2016,16 @@ class Response implements ResponseInterface
      * If called with no arguments returns the last Content-Length set
      *
      * @param int|null $bytes Number of bytes
-     * @return int|null
+     * @return string|null
      * @deprecated 3.4.0 Use withLength() to set length instead.
      */
     public function length($bytes = null)
     {
+        deprecationWarning(
+            'Response::length() is deprecated. ' .
+            'Use withLength() instead.'
+        );
+
         if ($bytes !== null) {
             $this->_setHeader('Content-Length', $bytes);
         }
@@ -1839,6 +2049,43 @@ class Response implements ResponseInterface
     }
 
     /**
+     * Create a new response with the Link header set.
+     *
+     * ### Examples
+     *
+     * ```
+     * $response = $response->withAddedLink('http://example.com?page=1', ['rel' => 'prev'])
+     *     ->withAddedLink('http://example.com?page=3', ['rel' => 'next']);
+     * ```
+     *
+     * Will generate:
+     *
+     * ```
+     * Link: <http://example.com?page=1>; rel="prev"
+     * Link: <http://example.com?page=3>; rel="next"
+     * ```
+     *
+     * @param string $url The LinkHeader url.
+     * @param array $options The LinkHeader params.
+     * @return static
+     * @since 3.6.0
+     */
+    public function withAddedLink($url, $options = [])
+    {
+        $params = [];
+        foreach ($options as $key => $option) {
+            $params[] = $key . '="' . $option . '"';
+        }
+
+        $param = '';
+        if ($params) {
+            $param = '; ' . implode('; ', $params);
+        }
+
+        return $this->withAddedHeader('Link', '<' . $url . '>' . $param);
+    }
+
+    /**
      * Checks whether a response has not been modified according to the 'If-None-Match'
      * (Etags) and 'If-Modified-Since' (last modification date) request
      * headers. If the response is detected to be not modified, it
@@ -1848,24 +2095,29 @@ class Response implements ResponseInterface
      * the Last-Modified etag response header before calling this method. Otherwise
      * a comparison will not be possible.
      *
+     * *Warning* This method mutates the response in-place and should be avoided.
+     *
      * @param \Cake\Http\ServerRequest $request Request object
      * @return bool Whether the response was marked as not modified or not.
      */
     public function checkNotModified(ServerRequest $request)
     {
-        $etags = preg_split('/\s*,\s*/', $request->header('If-None-Match'), null, PREG_SPLIT_NO_EMPTY);
-        $modifiedSince = $request->header('If-Modified-Since');
-        if ($responseTag = $this->etag()) {
-            $etagMatches = in_array('*', $etags) || in_array($responseTag, $etags);
+        $etags = preg_split('/\s*,\s*/', (string)$request->getHeaderLine('If-None-Match'), 0, PREG_SPLIT_NO_EMPTY);
+        $responseTag = $this->getHeaderLine('Etag');
+        $etagMatches = null;
+        if ($responseTag) {
+            $etagMatches = in_array('*', $etags, true) || in_array($responseTag, $etags, true);
         }
-        if ($modifiedSince) {
-            $timeMatches = strtotime($this->modified()) === strtotime($modifiedSince);
+
+        $modifiedSince = $request->getHeaderLine('If-Modified-Since');
+        $timeMatches = null;
+        if ($modifiedSince && $this->hasHeader('Last-Modified')) {
+            $timeMatches = strtotime($this->getHeaderLine('Last-Modified')) === strtotime($modifiedSince);
         }
-        $checks = compact('etagMatches', 'timeMatches');
-        if (empty($checks)) {
+        if ($etagMatches === null && $timeMatches === null) {
             return false;
         }
-        $notModified = !in_array(false, $checks, true);
+        $notModified = $etagMatches !== false && $timeMatches !== false;
         if ($notModified) {
             $this->notModified();
         }
@@ -1929,38 +2181,52 @@ class Response implements ResponseInterface
      */
     public function cookie($options = null)
     {
+        deprecationWarning(
+            'Response::cookie() is deprecated. ' .
+            'Use getCookie(), getCookies() and withCookie() instead.'
+        );
+
         if ($options === null) {
-            return $this->_cookies;
+            return $this->getCookies();
         }
 
         if (is_string($options)) {
-            if (!isset($this->_cookies[$options])) {
+            if (!$this->_cookies->has($options)) {
                 return null;
             }
 
-            return $this->_cookies[$options];
+            $cookie = $this->_cookies->get($options);
+
+            return $this->convertCookieToArray($cookie);
         }
 
-        $defaults = [
+        $options += [
             'name' => 'CakeCookie[default]',
             'value' => '',
             'expire' => 0,
             'path' => '/',
             'domain' => '',
             'secure' => false,
-            'httpOnly' => false
+            'httpOnly' => false,
         ];
-        $options += $defaults;
-
-        $this->_cookies[$options['name']] = $options;
+        $expires = $options['expire'] ? new DateTime('@' . $options['expire']) : null;
+        $cookie = new Cookie(
+            $options['name'],
+            $options['value'],
+            $expires,
+            $options['path'],
+            $options['domain'],
+            $options['secure'],
+            $options['httpOnly']
+        );
+        $this->_cookies = $this->_cookies->add($cookie);
     }
 
     /**
      * Create a new response with a cookie set.
      *
-     * ### Options
+     * ### Data
      *
-     * - `name`: The Cookie name
      * - `value`: Value of the cookie
      * - `expire`: Time the cookie expires in
      * - `path`: Path the cookie applies to
@@ -1976,30 +2242,113 @@ class Response implements ResponseInterface
      *
      * // customize cookie attributes
      * $response = $response->withCookie('remember_me', ['path' => '/login']);
+     *
+     * // add a cookie object
+     * $response = $response->withCookie(new Cookie('remember_me', 1));
      * ```
      *
-     * @param string $name The name of the cookie to set.
+     * @param string|\Cake\Http\Cookie\Cookie $name The name of the cookie to set, or a cookie object
      * @param array|string $data Either a string value, or an array of cookie options.
      * @return static
      */
     public function withCookie($name, $data = '')
     {
-        if (!is_array($data)) {
-            $data = ['value' => $data];
+        if ($name instanceof Cookie) {
+            $cookie = $name;
+        } else {
+            deprecationWarning(
+                get_called_class() . '::withCookie(string $name, array $data) is deprecated. ' .
+                'Pass an instance of \Cake\Http\Cookie\Cookie instead.'
+            );
+
+            if (!is_array($data)) {
+                $data = ['value' => $data];
+            }
+            $data += [
+                'value' => '',
+                'expire' => 0,
+                'path' => '/',
+                'domain' => '',
+                'secure' => false,
+                'httpOnly' => false,
+                'samesite' => null,
+            ];
+            $expires = $data['expire'] ? new DateTime('@' . $data['expire']) : null;
+            $cookie = new Cookie(
+                $name,
+                $data['value'],
+                $expires,
+                $data['path'],
+                $data['domain'],
+                $data['secure'],
+                $data['httpOnly'],
+                $data['samesite']
+            );
         }
-        $defaults = [
-            'value' => '',
-            'expire' => 0,
-            'path' => '/',
-            'domain' => '',
-            'secure' => false,
-            'httpOnly' => false
-        ];
-        $data += $defaults;
-        $data['name'] = $name;
 
         $new = clone $this;
-        $new->_cookies[$name] = $data;
+        $new->_cookies = $new->_cookies->add($cookie);
+
+        return $new;
+    }
+
+    /**
+     * Create a new response with an expired cookie set.
+     *
+     * ### Options
+     *
+     * - `path`: Path the cookie applies to
+     * - `domain`: Domain the cookie is for.
+     * - `secure`: Is the cookie https?
+     * - `httpOnly`: Is the cookie available in the client?
+     *
+     * ### Examples
+     *
+     * ```
+     * // set scalar value with defaults
+     * $response = $response->withExpiredCookie('remember_me');
+     *
+     * // customize cookie attributes
+     * $response = $response->withExpiredCookie('remember_me', ['path' => '/login']);
+     *
+     * // add a cookie object
+     * $response = $response->withExpiredCookie(new Cookie('remember_me'));
+     * ```
+     *
+     * @param string|\Cake\Http\Cookie\CookieInterface $name The name of the cookie to expire, or a cookie object
+     * @param array $options An array of cookie options.
+     * @return static
+     */
+    public function withExpiredCookie($name, $options = [])
+    {
+        if ($name instanceof CookieInterface) {
+            $cookie = $name->withExpired();
+        } else {
+            deprecationWarning(
+                get_called_class() . '::withExpiredCookie(string $name, array $data) is deprecated. ' .
+                'Pass an instance of \Cake\Http\Cookie\Cookie instead.'
+            );
+
+            $options += [
+                'path' => '/',
+                'domain' => '',
+                'secure' => false,
+                'httpOnly' => false,
+            ];
+
+            $cookie = new Cookie(
+                $name,
+                '',
+                DateTime::createFromFormat('U', 1),
+                $options['path'],
+                $options['domain'],
+                $options['secure'],
+                $options['httpOnly']
+            );
+        }
+
+        $new = clone $this;
+        $new->_cookies = $new->_cookies->add($cookie);
 
         return $new;
     }
@@ -2015,11 +2364,13 @@ class Response implements ResponseInterface
      */
     public function getCookie($name)
     {
-        if (isset($this->_cookies[$name])) {
-            return $this->_cookies[$name];
+        if (!$this->_cookies->has($name)) {
+            return null;
         }
 
-        return null;
+        $cookie = $this->_cookies->get($name);
+
+        return $this->convertCookieToArray($cookie);
     }
 
     /**
@@ -2031,7 +2382,59 @@ class Response implements ResponseInterface
      */
     public function getCookies()
     {
+        $out = [];
+        foreach ($this->_cookies as $cookie) {
+            $out[$cookie->getName()] = $this->convertCookieToArray($cookie);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Convert the cookie into an array of its properties.
+     *
+     * This method is compatible with the historical behavior of Cake\Http\Response,
+     * where `httponly` is `httpOnly` and `expires` is `expire`
+     *
+     * @param \Cake\Http\Cookie\CookieInterface $cookie Cookie object.
+     * @return array
+     */
+    protected function convertCookieToArray(CookieInterface $cookie)
+    {
+        return [
+            'name' => $cookie->getName(),
+            'value' => $cookie->getStringValue(),
+            'path' => $cookie->getPath(),
+            'domain' => $cookie->getDomain(),
+            'secure' => $cookie->isSecure(),
+            'httpOnly' => $cookie->isHttpOnly(),
+            'expire' => $cookie->getExpiresTimestamp(),
+            'samesite' => $cookie->getSameSite(),
+        ];
+    }
+
+    /**
+     * Get the CookieCollection from the response
+     *
+     * @return \Cake\Http\Cookie\CookieCollection
+     */
+    public function getCookieCollection()
+    {
         return $this->_cookies;
+    }
+
+    /**
+     * Get a new instance with provided cookie collection.
+     *
+     * @param \Cake\Http\Cookie\CookieCollection $cookieCollection Cookie collection to set.
+     * @return static
+     */
+    public function withCookieCollection(CookieCollection $cookieCollection)
+    {
+        $new = clone $this;
+        $new->_cookies = $cookieCollection;
+
+        return $new;
     }
 
     /**
@@ -2041,12 +2444,12 @@ class Response implements ResponseInterface
      *
      * ### Full URI
      * ```
-     * cors($request, 'http://www.cakephp.org');
+     * cors($request, 'https://www.cakephp.org');
      * ```
      *
      * ### URI with wildcard
      * ```
-     * cors($request, 'http://*.cakephp.org');
+     * cors($request, 'https://*.cakephp.org');
      * ```
      *
      * ### Ignoring the requested protocol
@@ -2068,15 +2471,15 @@ class Response implements ResponseInterface
      * Instead the builder object should be used.
      *
      * @param \Cake\Http\ServerRequest $request Request object
-     * @param string|array $allowedDomains List of allowed domains, see method description for more details
-     * @param string|array $allowedMethods List of HTTP verbs allowed
-     * @param string|array $allowedHeaders List of HTTP headers allowed
-     * @return \Cake\Network\CorsBuilder A builder object the provides a fluent interface for defining
+     * @param string|string[] $allowedDomains List of allowed domains, see method description for more details
+     * @param string|string[] $allowedMethods List of HTTP verbs allowed
+     * @param string|string[] $allowedHeaders List of HTTP headers allowed
+     * @return \Cake\Http\CorsBuilder A builder object the provides a fluent interface for defining
      *   additional CORS headers.
      */
     public function cors(ServerRequest $request, $allowedDomains = [], $allowedMethods = [], $allowedHeaders = [])
     {
-        $origin = $request->header('Origin');
+        $origin = $request->getHeaderLine('Origin');
         $ssl = $request->is('ssl');
         $builder = new CorsBuilder($this, $origin, $ssl);
         if (!$origin) {
@@ -2085,11 +2488,25 @@ class Response implements ResponseInterface
         if (empty($allowedDomains) && empty($allowedMethods) && empty($allowedHeaders)) {
             return $builder;
         }
+        deprecationWarning(
+            'The $allowedDomains, $allowedMethods, and $allowedHeaders parameters of Response::cors() ' .
+            'are deprecated. Instead you should use the builder methods on the return of cors().'
+        );
 
-        $builder->allowOrigin($allowedDomains)
+        $updated = $builder->allowOrigin($allowedDomains)
             ->allowMethods((array)$allowedMethods)
             ->allowHeaders((array)$allowedHeaders)
             ->build();
+
+        // If $updated is a new instance, mutate this object in-place
+        // to retain existing behavior.
+        if ($updated !== $this) {
+            foreach ($updated->getHeaders() as $name => $values) {
+                if (!$this->hasHeader($name)) {
+                    $this->_setHeader($name, $values[0]);
+                }
+            }
+        }
 
         return $builder;
     }
@@ -2106,18 +2523,23 @@ class Response implements ResponseInterface
      * - download: If `true` sets download header and forces file to be downloaded rather than displayed in browser
      *
      * @param string $path Path to file. If the path is not an absolute path that resolves
-     *   to a file, `APP` will be prepended to the path.
+     *   to a file, `APP` will be prepended to the path (this behavior is deprecated).
      * @param array $options Options See above.
      * @return void
-     * @throws \Cake\Network\Exception\NotFoundException
+     * @throws \Cake\Http\Exception\NotFoundException
      * @deprecated 3.4.0 Use withFile() instead.
      */
     public function file($path, array $options = [])
     {
+        deprecationWarning(
+            'Response::file() is deprecated. ' .
+            'Use withFile() instead.'
+        );
+
         $file = $this->validateFile($path);
         $options += [
             'name' => null,
-            'download' => null
+            'download' => null,
         ];
 
         $extension = strtolower($file->ext());
@@ -2175,17 +2597,17 @@ class Response implements ResponseInterface
      *   be downloaded rather than displayed inline.
      *
      * @param string $path Path to file. If the path is not an absolute path that resolves
-     *   to a file, `APP` will be prepended to the path.
+     *   to a file, `APP` will be prepended to the path (this behavior is deprecated).
      * @param array $options Options See above.
      * @return static
-     * @throws \Cake\Network\Exception\NotFoundException
+     * @throws \Cake\Http\Exception\NotFoundException
      */
     public function withFile($path, array $options = [])
     {
         $file = $this->validateFile($path);
         $options += [
             'name' => null,
-            'download' => null
+            'download' => null,
         ];
 
         $extension = strtolower($file->ext());
@@ -2249,7 +2671,7 @@ class Response implements ResponseInterface
      * Validate a file path is a valid response body.
      *
      * @param string $path The path to the file.
-     * @throws \Cake\Network\Exception\NotFoundException
+     * @throws \Cake\Http\Exception\NotFoundException
      * @return \Cake\Filesystem\File
      */
     protected function validateFile($path)
@@ -2258,7 +2680,17 @@ class Response implements ResponseInterface
             throw new NotFoundException(__d('cake', 'The requested file contains `..` and will not be read.'));
         }
         if (!is_file($path)) {
+            deprecationWarning(
+                'Automatic prefixing of paths with `APP` by `Response::file()` and `withFile()` is deprecated. ' .
+                'Use absolute paths instead.'
+            );
             $path = APP . $path;
+        }
+        if (!Folder::isAbsolute($path)) {
+            deprecationWarning(
+                'Serving files via `file()` or `withFile()` using relative paths is deprecated.' .
+                'Use an absolute path instead.'
+            );
         }
 
         $file = new File($path);
@@ -2316,20 +2748,15 @@ class Response implements ResponseInterface
         }
 
         if ($start > $end || $end > $lastByte || $start > $lastByte) {
-            $this->statusCode(416);
-            $this->header([
-                'Content-Range' => 'bytes 0-' . $lastByte . '/' . $fileSize
-            ]);
+            $this->_setStatus(416);
+            $this->_setHeader('Content-Range', 'bytes 0-' . $lastByte . '/' . $fileSize);
 
             return;
         }
 
-        $this->header([
-            'Content-Length' => $end - $start + 1,
-            'Content-Range' => 'bytes ' . $start . '-' . $end . '/' . $fileSize
-        ]);
-
-        $this->statusCode(206);
+        $this->_setHeader('Content-Length', $end - $start + 1);
+        $this->_setHeader('Content-Range', 'bytes ' . $start . '-' . $end . '/' . $fileSize);
+        $this->_setStatus(206);
         $this->_fileRange = [$start, $end];
     }
 
@@ -2343,6 +2770,8 @@ class Response implements ResponseInterface
      */
     protected function _sendFile($file, $range)
     {
+        deprecationWarning('Will be removed in 4.0.0');
+
         ob_implicit_flush(true);
 
         $file->open('rb');
@@ -2356,7 +2785,9 @@ class Response implements ResponseInterface
         }
 
         $bufferSize = 8192;
-        set_time_limit(0);
+        if (strpos(ini_get('disable_functions'), 'set_time_limit') === false) {
+            set_time_limit(0);
+        }
         session_write_close();
         while (!feof($file->handle)) {
             if (!$this->_isActive()) {
@@ -2386,6 +2817,8 @@ class Response implements ResponseInterface
      */
     protected function _isActive()
     {
+        deprecationWarning('Will be removed in 4.0.0');
+
         return connection_status() === CONNECTION_NORMAL && !connection_aborted();
     }
 
@@ -2397,6 +2830,10 @@ class Response implements ResponseInterface
      */
     protected function _clearBuffer()
     {
+        deprecationWarning(
+            'This function is not needed anymore and will be removed.'
+        );
+
         //@codingStandardsIgnoreStart
         return @ob_end_clean();
         //@codingStandardsIgnoreEnd
@@ -2410,6 +2847,10 @@ class Response implements ResponseInterface
      */
     protected function _flushBuffer()
     {
+        deprecationWarning(
+            'This function is not needed anymore and will be removed.'
+        );
+
         //@codingStandardsIgnoreStart
         @flush();
         if (ob_get_level()) {
@@ -2422,12 +2863,14 @@ class Response implements ResponseInterface
      * Stop execution of the current script. Wraps exit() making
      * testing easier.
      *
-     * @param int|string $status See http://php.net/exit for values
+     * @param int|string $status See https://secure.php.net/exit for values
      * @return void
      * @deprecated 3.4.0 Will be removed in 4.0.0
      */
     public function stop($status = 0)
     {
+        deprecationWarning('Will be removed in 4.0.0');
+
         exit($status);
     }
 
@@ -2441,16 +2884,16 @@ class Response implements ResponseInterface
     {
         return [
             'status' => $this->_status,
-            'contentType' => $this->_contentType,
+            'contentType' => $this->getType(),
             'headers' => $this->headers,
             'file' => $this->_file,
             'fileRange' => $this->_fileRange,
             'cookies' => $this->_cookies,
             'cacheDirectives' => $this->_cacheDirectives,
-            'body' => $this->getBody()->getContents(),
+            'body' => (string)$this->getBody(),
         ];
     }
 }
 
-// @deprecated Add backwards compat alias.
+// @deprecated 3.4.0 Add backwards compat alias.
 class_alias('Cake\Http\Response', 'Cake\Network\Response');

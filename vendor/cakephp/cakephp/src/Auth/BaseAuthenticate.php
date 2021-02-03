@@ -1,15 +1,15 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Auth;
 
@@ -18,15 +18,15 @@ use Cake\Core\InstanceConfigTrait;
 use Cake\Event\EventListenerInterface;
 use Cake\Http\Response;
 use Cake\Http\ServerRequest;
-use Cake\ORM\TableRegistry;
+use Cake\ORM\Locator\LocatorAwareTrait;
 
 /**
  * Base Authentication class with common methods and properties.
  */
 abstract class BaseAuthenticate implements EventListenerInterface
 {
-
     use InstanceConfigTrait;
+    use LocatorAwareTrait;
 
     /**
      * Default config for this object.
@@ -48,13 +48,13 @@ abstract class BaseAuthenticate implements EventListenerInterface
     protected $_defaultConfig = [
         'fields' => [
             'username' => 'username',
-            'password' => 'password'
+            'password' => 'password',
         ],
         'userModel' => 'Users',
         'scope' => [],
         'finder' => 'all',
         'contain' => null,
-        'passwordHasher' => 'Default'
+        'passwordHasher' => 'Default',
     ];
 
     /**
@@ -67,7 +67,7 @@ abstract class BaseAuthenticate implements EventListenerInterface
     /**
      * Password hasher instance.
      *
-     * @var \Cake\Auth\AbstractPasswordHasher
+     * @var \Cake\Auth\AbstractPasswordHasher|null
      */
     protected $_passwordHasher;
 
@@ -89,6 +89,13 @@ abstract class BaseAuthenticate implements EventListenerInterface
     {
         $this->_registry = $registry;
         $this->setConfig($config);
+
+        if ($this->getConfig('scope') || $this->getConfig('contain')) {
+            deprecationWarning(
+                'The `scope` and `contain` options for Authentication are deprecated. ' .
+                'Use the `finder` option instead to define additional conditions.'
+            );
+        }
     }
 
     /**
@@ -100,25 +107,52 @@ abstract class BaseAuthenticate implements EventListenerInterface
      * @param string $username The username/identifier.
      * @param string|null $password The password, if not provided password checking is skipped
      *   and result of find is returned.
-     * @return bool|array Either false on failure, or an array of user data.
+     * @return array|false Either false on failure, or an array of user data.
      */
     protected function _findUser($username, $password = null)
     {
         $result = $this->_query($username)->first();
 
-        if (empty($result)) {
+        if ($result === null) {
+            // Waste time hashing the password, to prevent
+            // timing side-channels. However, don't hash
+            // null passwords as authentication systems
+            // like digest auth don't use passwords
+            // and hashing *could* create a timing side-channel.
+            if ($password !== null) {
+                $hasher = $this->passwordHasher();
+                $hasher->hash($password);
+            }
+
             return false;
         }
 
+        $passwordField = $this->_config['fields']['password'];
         if ($password !== null) {
             $hasher = $this->passwordHasher();
-            $hashedPassword = $result->get($this->_config['fields']['password']);
+            $hashedPassword = $result->get($passwordField);
+
+            if ($hashedPassword === null || $hashedPassword === '') {
+                // Waste time hashing the password, to prevent
+                // timing side-channels to distinguish whether
+                // user has password or not.
+                $hasher->hash($password);
+
+                return false;
+            }
+
             if (!$hasher->check($password, $hashedPassword)) {
                 return false;
             }
 
             $this->_needsPasswordRehash = $hasher->needsRehash($hashedPassword);
-            $result->unsetProperty($this->_config['fields']['password']);
+            $result->unsetProperty($passwordField);
+        }
+        $hidden = $result->getHidden();
+        if ($password === null && in_array($passwordField, $hidden, true)) {
+            $key = array_search($passwordField, $hidden, true);
+            unset($hidden[$key]);
+            $result->setHidden($hidden);
         }
 
         return $result->toArray();
@@ -133,10 +167,10 @@ abstract class BaseAuthenticate implements EventListenerInterface
     protected function _query($username)
     {
         $config = $this->_config;
-        $table = TableRegistry::get($config['userModel']);
+        $table = $this->getTableLocator()->get($config['userModel']);
 
         $options = [
-            'conditions' => [$table->aliasField($config['fields']['username']) => $username]
+            'conditions' => [$table->aliasField($config['fields']['username']) => $username],
         ];
 
         if (!empty($config['scope'])) {
@@ -168,7 +202,7 @@ abstract class BaseAuthenticate implements EventListenerInterface
      */
     public function passwordHasher()
     {
-        if ($this->_passwordHasher) {
+        if ($this->_passwordHasher !== null) {
             return $this->_passwordHasher;
         }
 
@@ -193,7 +227,7 @@ abstract class BaseAuthenticate implements EventListenerInterface
      *
      * @param \Cake\Http\ServerRequest $request Request to get authentication information from.
      * @param \Cake\Http\Response $response A response object that can have headers added.
-     * @return mixed Either false on failure, or an array of user data on success.
+     * @return array|false Either false on failure, or an array of user data on success.
      */
     abstract public function authenticate(ServerRequest $request, Response $response);
 
@@ -202,7 +236,7 @@ abstract class BaseAuthenticate implements EventListenerInterface
      * systems like basic and digest auth.
      *
      * @param \Cake\Http\ServerRequest $request Request object.
-     * @return mixed Either false or an array of user information
+     * @return array|false Either false or an array of user information
      */
     public function getUser(ServerRequest $request)
     {
@@ -219,7 +253,7 @@ abstract class BaseAuthenticate implements EventListenerInterface
      *
      * @param \Cake\Http\ServerRequest $request A request object.
      * @param \Cake\Http\Response $response A response object.
-     * @return void
+     * @return \Cake\Http\Response|null|void
      */
     public function unauthenticated(ServerRequest $request, Response $response)
     {

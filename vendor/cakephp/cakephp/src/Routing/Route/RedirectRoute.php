@@ -1,16 +1,16 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         2.0.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Routing\Route;
 
@@ -27,7 +27,6 @@ use Cake\Routing\Router;
  */
 class RedirectRoute extends Route
 {
-
     /**
      * A Response object
      *
@@ -88,7 +87,7 @@ class RedirectRoute extends Route
                     }
                 }
             }
-            $redirect = Router::reverse($redirect);
+            $redirect = Router::reverseToArray($redirect);
         }
         $status = 301;
         if (isset($this->options['status']) && ($this->options['status'] >= 300 && $this->options['status'] < 400)) {
@@ -107,5 +106,18 @@ class RedirectRoute extends Route
     public function match(array $url, array $context = [])
     {
         return false;
+    }
+
+    /**
+     * Sets the HTTP status
+     *
+     * @param int $status The status code for this route
+     * @return $this
+     */
+    public function setStatus($status)
+    {
+        $this->options['status'] = $status;
+
+        return $this;
     }
 }

@@ -1,21 +1,22 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         3.0.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Core;
 
 use Cake\Core\Exception\Exception;
 use Cake\Utility\Hash;
+use InvalidArgumentException;
 
 /**
  * A trait for reading and writing instance config
@@ -24,7 +25,6 @@ use Cake\Utility\Hash;
  */
 trait InstanceConfigTrait
 {
-
     /**
      * Runtime config
      *
@@ -103,17 +103,26 @@ trait InstanceConfigTrait
      * $this->getConfig('some.nested.key');
      * ```
      *
+     * Reading with default value:
+     *
+     * ```
+     * $this->getConfig('some-key', 'default-value');
+     * ```
+     *
      * @param string|null $key The key to get or null for the whole config.
-     * @return mixed Config value being read.
+     * @param mixed|null $default The return value when the key does not exist.
+     * @return mixed|null Configuration data at the named key or null if the key does not exist.
      */
-    public function getConfig($key = null)
+    public function getConfig($key = null, $default = null)
     {
         if (!$this->_configInitialized) {
             $this->_config = $this->_defaultConfig;
             $this->_configInitialized = true;
         }
 
-        return $this->_configRead($key);
+        $return = $this->_configRead($key);
+
+        return $return === null ? $default : $return;
     }
 
     /**
@@ -166,11 +175,39 @@ trait InstanceConfigTrait
      */
     public function config($key = null, $value = null, $merge = true)
     {
+        deprecationWarning(
+            get_called_class() . '::config() is deprecated. ' .
+            'Use setConfig()/getConfig() instead.'
+        );
+
         if (is_array($key) || func_num_args() >= 2) {
             return $this->setConfig($key, $value, $merge);
         }
 
         return $this->getConfig($key);
+    }
+
+    /**
+     * Returns the config for this specific key.
+     *
+     * The config value for this key must exist, it can never be null.
+     *
+     * @param string|null $key The key to get.
+     * @return mixed Configuration data at the named key
+     * @throws \InvalidArgumentException
+     */
+    public function getConfigOrFail($key)
+    {
+        if (!isset($key)) {
+            throw new InvalidArgumentException('$key must not be null.');
+        }
+
+        $config = $this->getConfig($key);
+        if ($config === null) {
+            throw new InvalidArgumentException(sprintf('Expected configuration `%s` not found.', $key));
+        }
+
+        return $config;
     }
 
     /**

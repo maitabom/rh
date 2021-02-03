@@ -1,20 +1,21 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         1.2.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Shell;
 
 use Cake\Console\Shell;
+use Cake\Core\App;
 use Cake\Core\Plugin;
 use Cake\Utility\Inflector;
 use DirectoryIterator;
@@ -26,7 +27,6 @@ use DirectoryIterator;
  */
 class I18nShell extends Shell
 {
-
     /**
      * Contains tasks to load and instantiate
      *
@@ -94,13 +94,13 @@ class I18nShell extends Shell
             $this->abort('Invalid language code. Valid is `en`, `eng`, `en_US` etc.');
         }
 
-        $this->_paths = [APP];
+        $this->_paths = App::path('Locale');
         if ($this->param('plugin')) {
             $plugin = Inflector::camelize($this->param('plugin'));
-            $this->_paths = [Plugin::classPath($plugin)];
+            $this->_paths = App::path('Locale', $plugin);
         }
 
-        $response = $this->in('What folder?', null, rtrim($this->_paths[0], DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'Locale');
+        $response = $this->in('What folder?', null, rtrim($this->_paths[0], DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR);
         $sourceFolder = rtrim($response, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
         $targetFolder = $sourceFolder . $language . DIRECTORY_SEPARATOR;
         if (!is_dir($targetFolder)) {
@@ -137,30 +137,30 @@ class I18nShell extends Shell
             'options' => [
                 'plugin' => [
                     'help' => 'Plugin name.',
-                    'short' => 'p'
+                    'short' => 'p',
                 ],
                 'force' => [
                     'help' => 'Force overwriting.',
                     'short' => 'f',
-                    'boolean' => true
-                ]
+                    'boolean' => true,
+                ],
             ],
             'arguments' => [
                 'language' => [
-                    'help' => 'Two-letter language code.'
-                ]
-            ]
+                    'help' => 'Two-letter language code.',
+                ],
+            ],
         ];
 
         $parser->setDescription(
             'I18n Shell generates .pot files(s) with translations.'
         )->addSubcommand('extract', [
             'help' => 'Extract the po translations from your application',
-            'parser' => $this->Extract->getOptionParser()
+            'parser' => $this->Extract->getOptionParser(),
         ])
         ->addSubcommand('init', [
             'help' => 'Init PO language file from POT file',
-            'parser' => $initParser
+            'parser' => $initParser,
         ]);
 
         return $parser;

@@ -1,16 +1,16 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         3.0.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\I18n;
 
@@ -26,7 +26,6 @@ use Cake\Cache\CacheEngine;
  */
 class TranslatorRegistry extends TranslatorLocator
 {
-
     /**
      * A list of loader functions indexed by domain name. Loaders are
      * callables that are invoked as a default for building translation
@@ -87,7 +86,7 @@ class TranslatorRegistry extends TranslatorLocator
         $this->registerLoader($this->_fallbackLoader, function ($name, $locale) {
             $chain = new ChainMessagesLoader([
                 new MessagesFileLoader($name, $locale, 'mo'),
-                new MessagesFileLoader($name, $locale, 'po')
+                new MessagesFileLoader($name, $locale, 'po'),
             ]);
 
             // \Aura\Intl\Package by default uses formatter configured with key "basic".
@@ -119,7 +118,7 @@ class TranslatorRegistry extends TranslatorLocator
     /**
      * Gets a translator from the registry by package for a locale.
      *
-     * @param string $name The translator package to retrieve.
+     * @param string|null $name The translator package to retrieve.
      * @param string|null $locale The locale to use; if empty, uses the default
      * locale.
      * @return \Aura\Intl\TranslatorInterface|null A translator object.
@@ -286,7 +285,7 @@ class TranslatorRegistry extends TranslatorLocator
             return $loader;
         }
         $loader = function () use ($loader, $fallbackDomain) {
-            /* @var \Aura\Intl\Package $package */
+            /** @var \Aura\Intl\Package $package */
             $package = $loader();
             if (!$package->getFallback()) {
                 $package->setFallback($fallbackDomain);

@@ -1,16 +1,16 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         3.0.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Collection;
 
@@ -21,10 +21,11 @@ use JsonSerializable;
  * Describes the methods a Collection should implement. A collection is an immutable
  * list of elements exposing a number of traversing and extracting method for
  * generating other collections.
+ *
+ * @method \Cake\Collection\CollectionInterface cartesianProduct(callable $operation = null, callable $filter = null)
  */
 interface CollectionInterface extends Iterator, JsonSerializable
 {
-
     /**
      * Executes the passed callable for each of the elements in this collection
      * and passes both the value and key for them on each step.
@@ -40,7 +41,7 @@ interface CollectionInterface extends Iterator, JsonSerializable
      *
      * @param callable $c callable function that will receive each of the elements
      * in this collection
-     * @return \Cake\Collection\CollectionInterface
+     * @return $this
      */
     public function each(callable $c);
 
@@ -254,10 +255,10 @@ interface CollectionInterface extends Iterator, JsonSerializable
      * @param callable|string $callback the callback or column name to use for sorting
      * @param int $type the type of comparison to perform, either SORT_STRING
      * SORT_NUMERIC or SORT_NATURAL
-     * @see \Cake\Collection\CollectionIterface::sortBy()
+     * @see \Cake\Collection\CollectionInterface::sortBy()
      * @return mixed The value of the top element in the collection
      */
-    public function max($callback, $type = SORT_NUMERIC);
+    public function max($callback, $type = \SORT_NUMERIC);
 
     /**
      * Returns the bottom element in this collection after being sorted by a property.
@@ -283,7 +284,64 @@ interface CollectionInterface extends Iterator, JsonSerializable
      * @see \Cake\Collection\CollectionInterface::sortBy()
      * @return mixed The value of the bottom element in the collection
      */
-    public function min($callback, $type = SORT_NUMERIC);
+    public function min($callback, $type = \SORT_NUMERIC);
+
+    /**
+     * Returns the average of all the values extracted with $matcher
+     * or of this collection.
+     *
+     * ### Example:
+     *
+     * ```
+     * $items = [
+     *  ['invoice' => ['total' => 100]],
+     *  ['invoice' => ['total' => 200]]
+     * ];
+     *
+     * $total = (new Collection($items))->avg('invoice.total');
+     *
+     * // Total: 150
+     *
+     * $total = (new Collection([1, 2, 3]))->avg();
+     * // Total: 2
+     * ```
+     *
+     * @param string|callable|null $matcher The property name to sum or a function
+     * If no value is passed, an identity function will be used.
+     * that will return the value of the property to sum.
+     * @return float|int|null
+     */
+    public function avg($matcher = null);
+
+    /**
+     * Returns the median of all the values extracted with $matcher
+     * or of this collection.
+     *
+     * ### Example:
+     *
+     * ```
+     * $items = [
+     *  ['invoice' => ['total' => 400]],
+     *  ['invoice' => ['total' => 500]]
+     *  ['invoice' => ['total' => 100]]
+     *  ['invoice' => ['total' => 333]]
+     *  ['invoice' => ['total' => 200]]
+     * ];
+     *
+     * $total = (new Collection($items))->median('invoice.total');
+     *
+     * // Total: 333
+     *
+     * $total = (new Collection([1, 2, 3, 4]))->median();
+     * // Total: 2.5
+     * ```
+     *
+     * @param string|callable|null $matcher The property name to sum or a function
+     * If no value is passed, an identity function will be used.
+     * that will return the value of the property to sum.
+     * @return float|int|null
+     */
+    public function median($matcher = null);
 
     /**
      * Returns a sorted iterator out of the elements in this collection,
@@ -321,7 +379,7 @@ interface CollectionInterface extends Iterator, JsonSerializable
      * SORT_NUMERIC or SORT_NATURAL
      * @return \Cake\Collection\CollectionInterface
      */
-    public function sortBy($callback, $dir = SORT_DESC, $type = SORT_NUMERIC);
+    public function sortBy($callback, $dir = SORT_DESC, $type = \SORT_NUMERIC);
 
     /**
      * Splits a collection into sets, grouped by the result of running each value
@@ -451,8 +509,8 @@ interface CollectionInterface extends Iterator, JsonSerializable
      *
      * ```
      * $items = [
-     *  ['invoice' => ['total' => 100],
-     *  ['invoice' => ['total' => 200]
+     *  ['invoice' => ['total' => 100]],
+     *  ['invoice' => ['total' => 200]]
      * ];
      *
      * $total = (new Collection($items))->sumOf('invoice.total');
@@ -499,6 +557,25 @@ interface CollectionInterface extends Iterator, JsonSerializable
      * @return \Cake\Collection\CollectionInterface
      */
     public function take($size = 1, $from = 0);
+
+    /**
+     * Returns the last N elements of a collection
+     *
+     * ### Example:
+     *
+     * ```
+     * $items = [1, 2, 3, 4, 5];
+     *
+     * $last = (new Collection($items))->takeLast(3);
+     *
+     * // Result will look like this when converted to array
+     * [3, 4, 5];
+     * ```
+     *
+     * @param int $howMany The number of elements at the end of the collection
+     * @return \Cake\Collection\CollectionInterface
+     */
+    public function takeLast($howMany);
 
     /**
      * Returns a new collection that will skip the specified amount of elements
@@ -684,7 +761,8 @@ interface CollectionInterface extends Iterator, JsonSerializable
     public function toList();
 
     /**
-     * Convert a result set into JSON.
+     * Returns the data that can be converted to JSON. This returns the same data
+     * as `toArray()` which contains only unique keys.
      *
      * Part of JsonSerializable interface.
      *
@@ -725,6 +803,16 @@ interface CollectionInterface extends Iterator, JsonSerializable
      * @return \Cake\Collection\CollectionInterface
      */
     public function compile($preserveKeys = true);
+
+    /**
+     * Returns a new collection where any operations chained after it are guaranteed
+     * to be run lazily. That is, elements will be yieleded one at a time.
+     *
+     * A lazy collection can only be iterated once. A second attempt results in an error.
+     *
+     * @return \Cake\Collection\CollectionInterface
+     */
+    public function lazy();
 
     /**
      * Returns a new collection where the operations performed by this collection.
@@ -780,7 +868,7 @@ interface CollectionInterface extends Iterator, JsonSerializable
 
     /**
      * Creates a new collection that when iterated will stop yielding results if
-     * the provided condition evaluates to false.
+     * the provided condition evaluates to true.
      *
      * This is handy for dealing with infinite iterators or any generator that
      * could start returning invalid elements at a certain point. For example,
@@ -805,7 +893,7 @@ interface CollectionInterface extends Iterator, JsonSerializable
      * ```
      *
      * @param callable $condition the method that will receive each of the elements and
-     * returns false when the iteration should be stopped.
+     * returns true when the iteration should be stopped.
      * If an array, it will be interpreted as a key-value list of conditions where
      * the key is a property path as accepted by `Collection::extract`,
      * and the value the condition against with each element will be matched.
@@ -918,7 +1006,6 @@ interface CollectionInterface extends Iterator, JsonSerializable
      *
      * @param int $chunkSize The maximum size for each chunk
      * @return \Cake\Collection\CollectionInterface
-     * @deprecated 4.0.0 Deprecated in favor of chunks
      */
     public function chunk($chunkSize);
 
@@ -962,7 +1049,7 @@ interface CollectionInterface extends Iterator, JsonSerializable
      * losing any possible transformations. This is used mainly to remove empty
      * IteratorIterator wrappers that can only slowdown the iteration process.
      *
-     * @return \Iterator
+     * @return \Traversable
      */
     public function unwrap();
 
@@ -993,4 +1080,52 @@ interface CollectionInterface extends Iterator, JsonSerializable
      * @return \Cake\Collection\CollectionInterface
      */
     public function transpose();
+
+    /**
+     * Returns the amount of elements in the collection.
+     *
+     * ## WARNINGS:
+     *
+     * ### Consumes all elements for NoRewindIterator collections:
+     *
+     * On certain type of collections, calling this method may render unusable afterwards.
+     * That is, you may not be able to get elements out of it, or to iterate on it anymore.
+     *
+     * Specifically any collection wrapping a Generator (a function with a yield statement)
+     * or a unbuffered database cursor will not accept any other function calls after calling
+     * `count()` on it.
+     *
+     * Create a new collection with `buffered()` method to overcome this problem.
+     *
+     * ### Can report more elements than unique keys:
+     *
+     * Any collection constructed by appending collections together, or by having internal iterators
+     * returning duplicate keys, will report a larger amount of elements using this functions than
+     * the final amount of elements when converting the collections to a keyed array. This is because
+     * duplicate keys will be collapsed into a single one in the final array, whereas this count method
+     * is only concerned by the amount of elements after converting it to a plain list.
+     *
+     * If you need the count of elements after taking the keys in consideration
+     * (the count of unique keys), you can call `countKeys()`
+     *
+     * ### Will change the current position of the iterator:
+     *
+     * Calling this method at the same time that you are iterating this collections, for example in
+     * a foreach, will result in undefined behavior. Avoid doing this.
+     *
+     * @return int
+     */
+    public function count();
+
+    /**
+     * Returns the number of unique keys in this iterator. This is the same as the number of
+     * elements the collection will contain after calling `toArray()`
+     *
+     * This method comes with a number of caveats. Please refer to `CollectionInterface::count()`
+     * for details.
+     *
+     * @see \Cake\Collection\CollectionInterface::count()
+     * @return int
+     */
+    public function countKeys();
 }

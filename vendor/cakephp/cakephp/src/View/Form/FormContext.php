@@ -1,16 +1,16 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         3.0.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\View\Form;
 
@@ -25,7 +25,6 @@ use Cake\Utility\Hash;
  */
 class FormContext implements ContextInterface
 {
-
     /**
      * The request object.
      *
@@ -80,13 +79,19 @@ class FormContext implements ContextInterface
     }
 
     /**
-     * {@inheritDoc}
+     * Get the value for a given path.
+     *
+     * Traverses the request and form data and finds the value for $path.
+     *
+     * @param string $field The dot separated path to the value.
+     * @param array $options options
+     * @return mixed The value of the field or null on a miss.
      */
     public function val($field, $options = [])
     {
         $options += [
             'default' => null,
-            'schemaDefault' => true
+            'schemaDefault' => true,
         ];
 
         $val = $this->_request->getData($field);
@@ -94,7 +99,32 @@ class FormContext implements ContextInterface
             return $val;
         }
 
-        return $options['default'];
+        $val = $this->_form->getData($field);
+        if ($val !== null) {
+            return $val;
+        }
+
+        if ($options['default'] !== null || !$options['schemaDefault']) {
+            return $options['default'];
+        }
+
+        return $this->_schemaDefault($field);
+    }
+
+    /**
+     * Get default value from form schema for given field.
+     *
+     * @param string $field Field name.
+     * @return mixed
+     */
+    protected function _schemaDefault($field)
+    {
+        $field = $this->_form->schema()->field($field);
+        if ($field) {
+            return $field['default'];
+        }
+
+        return null;
     }
 
     /**
@@ -102,7 +132,7 @@ class FormContext implements ContextInterface
      */
     public function isRequired($field)
     {
-        $validator = $this->_form->validator();
+        $validator = $this->_form->getValidator();
         if (!$validator->hasField($field)) {
             return false;
         }
@@ -111,6 +141,52 @@ class FormContext implements ContextInterface
         }
 
         return false;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function getRequiredMessage($field)
+    {
+        $parts = explode('.', $field);
+
+        $validator = $this->_form->getValidator();
+        $fieldName = array_pop($parts);
+        if (!$validator->hasField($fieldName)) {
+            return null;
+        }
+
+        $ruleset = $validator->field($fieldName);
+
+        $requiredMessage = $validator->getRequiredMessage($fieldName);
+        $emptyMessage = $validator->getNotEmptyMessage($fieldName);
+
+        if ($ruleset->isPresenceRequired() && $requiredMessage) {
+            return $requiredMessage;
+        }
+        if (!$ruleset->isEmptyAllowed() && $emptyMessage) {
+            return $emptyMessage;
+        }
+
+        return null;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function getMaxLength($field)
+    {
+        $validator = $this->_form->getValidator();
+        if (!$validator->hasField($field)) {
+            return null;
+        }
+        foreach ($validator->field($field)->rules() as $rule) {
+            if ($rule->get('rule') === 'maxLength') {
+                return $rule->get('pass')[0];
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -135,9 +211,9 @@ class FormContext implements ContextInterface
     public function attributes($field)
     {
         $column = (array)$this->_form->schema()->field($field);
-        $whitelist = ['length' => null, 'precision' => null];
+        $whiteList = ['length' => null, 'precision' => null];
 
-        return array_intersect_key($column, $whitelist);
+        return array_intersect_key($column, $whiteList);
     }
 
     /**
@@ -155,6 +231,6 @@ class FormContext implements ContextInterface
      */
     public function error($field)
     {
-        return array_values((array)Hash::get($this->_form->errors(), $field, []));
+        return (array)Hash::get($this->_form->getErrors(), $field, []);
     }
 }

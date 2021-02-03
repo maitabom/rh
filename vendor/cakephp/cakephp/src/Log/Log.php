@@ -1,15 +1,15 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         0.2.9
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Log;
 
@@ -103,7 +103,6 @@ use InvalidArgumentException;
  */
 class Log
 {
-
     use StaticConfigTrait {
         setConfig as protected _setConfig;
     }
@@ -111,7 +110,7 @@ class Log
     /**
      * An array mapping url schemes to fully qualified Log engine class names
      *
-     * @var array
+     * @var string[]
      */
     protected static $_dsnClassMap = [
         'console' => 'Cake\Log\Engine\ConsoleLog',
@@ -136,7 +135,7 @@ class Log
     /**
      * Handled log levels
      *
-     * @var array
+     * @var string[]
      */
     protected static $_levels = [
         'emergency',
@@ -146,12 +145,12 @@ class Log
         'warning',
         'notice',
         'info',
-        'debug'
+        'debug',
     ];
 
     /**
      * Log levels as detailed in RFC 5424
-     * http://tools.ietf.org/html/rfc5424
+     * https://tools.ietf.org/html/rfc5424
      *
      * @var array
      */
@@ -223,7 +222,7 @@ class Log
      * Call this method to obtain current
      * level configuration.
      *
-     * @return array active log levels
+     * @return string[] active log levels
      */
     public static function levels()
     {
@@ -402,7 +401,7 @@ class Log
      */
     public static function emergency($message, $context = [])
     {
-        return static::write('emergency', $message, $context);
+        return static::write(__FUNCTION__, $message, $context);
     }
 
     /**
@@ -418,7 +417,7 @@ class Log
      */
     public static function alert($message, $context = [])
     {
-        return static::write('alert', $message, $context);
+        return static::write(__FUNCTION__, $message, $context);
     }
 
     /**
@@ -434,7 +433,7 @@ class Log
      */
     public static function critical($message, $context = [])
     {
-        return static::write('critical', $message, $context);
+        return static::write(__FUNCTION__, $message, $context);
     }
 
     /**
@@ -450,7 +449,7 @@ class Log
      */
     public static function error($message, $context = [])
     {
-        return static::write('error', $message, $context);
+        return static::write(__FUNCTION__, $message, $context);
     }
 
     /**
@@ -466,7 +465,7 @@ class Log
      */
     public static function warning($message, $context = [])
     {
-        return static::write('warning', $message, $context);
+        return static::write(__FUNCTION__, $message, $context);
     }
 
     /**
@@ -482,7 +481,7 @@ class Log
      */
     public static function notice($message, $context = [])
     {
-        return static::write('notice', $message, $context);
+        return static::write(__FUNCTION__, $message, $context);
     }
 
     /**
@@ -498,7 +497,7 @@ class Log
      */
     public static function debug($message, $context = [])
     {
-        return static::write('debug', $message, $context);
+        return static::write(__FUNCTION__, $message, $context);
     }
 
     /**
@@ -514,6 +513,6 @@ class Log
      */
     public static function info($message, $context = [])
     {
-        return static::write('info', $message, $context);
+        return static::write(__FUNCTION__, $message, $context);
     }
 }

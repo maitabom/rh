@@ -1,23 +1,25 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         3.0.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\View\Form;
 
+use ArrayAccess;
 use Cake\Collection\Collection;
 use Cake\Datasource\EntityInterface;
+use Cake\Datasource\RepositoryInterface;
 use Cake\Http\ServerRequest;
-use Cake\ORM\TableRegistry;
+use Cake\ORM\Locator\LocatorAwareTrait;
 use Cake\Utility\Inflector;
 use RuntimeException;
 use Traversable;
@@ -44,6 +46,7 @@ use Traversable;
  */
 class EntityContext implements ContextInterface
 {
+    use LocatorAwareTrait;
 
     /**
      * The request object.
@@ -110,7 +113,7 @@ class EntityContext implements ContextInterface
      * Prepare some additional data from the context.
      *
      * If the table option was provided to the constructor and it
-     * was a string, ORM\TableRegistry will be used to get the correct table instance.
+     * was a string, TableLocator will be used to get the correct table instance.
      *
      * If an object is provided as the table option, it will be used as is.
      *
@@ -135,7 +138,7 @@ class EntityContext implements ContextInterface
             $isEntity = $entity instanceof EntityInterface;
 
             if ($isEntity) {
-                $table = $entity->source();
+                $table = $entity->getSource();
             }
             if (!$table && $isEntity && get_class($entity) !== 'Cake\ORM\Entity') {
                 list(, $entityClass) = namespaceSplit(get_class($entity));
@@ -143,10 +146,10 @@ class EntityContext implements ContextInterface
             }
         }
         if (is_string($table)) {
-            $table = TableRegistry::get($table);
+            $table = $this->getTableLocator()->get($table);
         }
 
-        if (!is_object($table)) {
+        if (!($table instanceof RepositoryInterface)) {
             throw new RuntimeException(
                 'Unable to find table class for current entity'
             );
@@ -155,6 +158,7 @@ class EntityContext implements ContextInterface
             is_array($entity) ||
             $entity instanceof Traversable
         );
+
         $alias = $this->_rootName = $table->getAlias();
         $this->_tables[$alias] = $table;
     }
@@ -180,7 +184,7 @@ class EntityContext implements ContextInterface
         $table = $this->_getTable($parts);
         $primaryKey = (array)$table->getPrimaryKey();
 
-        return in_array(array_pop($parts), $primaryKey);
+        return in_array(array_pop($parts), $primaryKey, true);
     }
 
     /**
@@ -227,7 +231,7 @@ class EntityContext implements ContextInterface
     {
         $options += [
             'default' => null,
-            'schemaDefault' => true
+            'schemaDefault' => true,
         ];
 
         $val = $this->_request->getData($field);
@@ -245,24 +249,25 @@ class EntityContext implements ContextInterface
         }
 
         if ($entity instanceof EntityInterface) {
-            $part = array_pop($parts);
+            $part = end($parts);
             $val = $entity->get($part);
             if ($val !== null) {
                 return $val;
             }
-            if ($options['default'] !== null
+            if (
+                $options['default'] !== null
                 || !$options['schemaDefault']
                 || !$entity->isNew()
             ) {
                 return $options['default'];
             }
 
-            return $this->_schemaDefault($part, $entity);
+            return $this->_schemaDefault($parts);
         }
-        if (is_array($entity)) {
+        if (is_array($entity) || $entity instanceof ArrayAccess) {
             $key = array_pop($parts);
 
-            return isset($entity[$key]) ? $entity[$key] : null;
+            return isset($entity[$key]) ? $entity[$key] : $options['default'];
         }
 
         return null;
@@ -271,16 +276,16 @@ class EntityContext implements ContextInterface
     /**
      * Get default value from table schema for given entity field.
      *
-     * @param string $field Field name.
-     * @param \Cake\Datasource\EntityInterface $entity The entity.
+     * @param array $parts Each one of the parts in a path for a field name
      * @return mixed
      */
-    protected function _schemaDefault($field, $entity)
+    protected function _schemaDefault($parts)
     {
-        $table = $this->_getTable($entity);
+        $table = $this->_getTable($parts);
         if ($table === false) {
             return null;
         }
+        $field = end($parts);
         $defaults = $table->getSchema()->defaultValues();
         if (!array_key_exists($field, $defaults)) {
             return null;
@@ -309,15 +314,16 @@ class EntityContext implements ContextInterface
     }
 
     /**
-     * Fetch the leaf entity for the given path.
+     * Fetch the entity or data value for a given path
      *
-     * This method will traverse the given path and find the leaf
-     * entity. If the path does not contain a leaf entity false
-     * will be returned.
+     * This method will traverse the given path and find the entity
+     * or array value for a given path.
+     *
+     * If you only want the terminal Entity for a path use `leafEntity` instead.
      *
      * @param array|null $path Each one of the parts in a path for a field name
      *  or null to get the entity passed in constructor context.
-     * @return \Cake\Datasource\EntityInterface|\Traversable|array|bool
+     * @return \Cake\Datasource\EntityInterface|\Traversable|array|false
      * @throws \RuntimeException When properties cannot be read.
      */
     public function entity($path = null)
@@ -345,7 +351,6 @@ class EntityContext implements ContextInterface
             $prop = $path[$i];
             $next = $this->_getProp($entity, $prop);
             $isLast = ($i === $last);
-
             if (!$isLast && $next === null && $prop !== '_ids') {
                 $table = $this->_getTable($path);
 
@@ -359,6 +364,74 @@ class EntityContext implements ContextInterface
             );
             if ($isLast || !$isTraversable) {
                 return $entity;
+            }
+            $entity = $next;
+        }
+        throw new RuntimeException(sprintf(
+            'Unable to fetch property "%s"',
+            implode('.', $path)
+        ));
+    }
+
+    /**
+     * Fetch the terminal or leaf entity for the given path.
+     *
+     * Traverse the path until an entity cannot be found. Lists containing
+     * entities will be traversed if the first element contains an entity.
+     * Otherwise the containing Entity will be assumed to be the terminal one.
+     *
+     * @param array|null $path Each one of the parts in a path for a field name
+     *  or null to get the entity passed in constructor context.
+     * @return array Containing the found entity, and remaining un-matched path.
+     * @throws \RuntimeException When properties cannot be read.
+     */
+    protected function leafEntity($path = null)
+    {
+        if ($path === null) {
+            return $this->_context['entity'];
+        }
+
+        $oneElement = count($path) === 1;
+        if ($oneElement && $this->_isCollection) {
+            throw new RuntimeException(sprintf(
+                'Unable to fetch property "%s"',
+                implode('.', $path)
+            ));
+        }
+        $entity = $this->_context['entity'];
+        if ($oneElement) {
+            return [$entity, $path];
+        }
+
+        if ($path[0] === $this->_rootName) {
+            $path = array_slice($path, 1);
+        }
+
+        $len = count($path);
+        $last = $len - 1;
+        $leafEntity = $entity;
+        for ($i = 0; $i < $len; $i++) {
+            $prop = $path[$i];
+            $next = $this->_getProp($entity, $prop);
+
+            // Did not dig into an entity, return the current one.
+            if (is_array($entity) && !($next instanceof EntityInterface || $next instanceof Traversable)) {
+                return [$leafEntity, array_slice($path, $i - 1)];
+            }
+
+            if ($next instanceof EntityInterface) {
+                $leafEntity = $next;
+            }
+
+            // If we are at the end of traversable elements
+            // return the last entity found.
+            $isTraversable = (
+                is_array($next) ||
+                $next instanceof Traversable ||
+                $next instanceof EntityInterface
+            );
+            if (!$isTraversable) {
+                return [$leafEntity, array_slice($path, $i)];
             }
             $entity = $next;
         }
@@ -423,6 +496,57 @@ class EntityContext implements ContextInterface
     }
 
     /**
+     * {@inheritDoc}
+     */
+    public function getRequiredMessage($field)
+    {
+        $parts = explode('.', $field);
+
+        $validator = $this->_getValidator($parts);
+        $fieldName = array_pop($parts);
+        if (!$validator->hasField($fieldName)) {
+            return null;
+        }
+
+        $ruleset = $validator->field($fieldName);
+
+        $requiredMessage = $validator->getRequiredMessage($fieldName);
+        $emptyMessage = $validator->getNotEmptyMessage($fieldName);
+
+        if ($ruleset->isPresenceRequired() && $requiredMessage) {
+            return $requiredMessage;
+        }
+        if (!$ruleset->isEmptyAllowed() && $emptyMessage) {
+            return $emptyMessage;
+        }
+
+        return null;
+    }
+
+    /**
+     * Get field length from validation
+     *
+     * @param string $field The dot separated path to the field you want to check.
+     * @return int|null
+     */
+    public function getMaxLength($field)
+    {
+        $parts = explode('.', $field);
+        $validator = $this->_getValidator($parts);
+        $fieldName = array_pop($parts);
+        if (!$validator->hasField($fieldName)) {
+            return null;
+        }
+        foreach ($validator->field($fieldName)->rules() as $rule) {
+            if ($rule->get('rule') === 'maxLength') {
+                return $rule->get('pass')[0];
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Get the field names from the top level entity.
      *
      * If the context is for an array of entities, the 0th index will be used.
@@ -467,7 +591,7 @@ class EntityContext implements ContextInterface
             $method = $this->_context['validator'][$alias];
         }
 
-        $validator = $table->validator($method);
+        $validator = $table->getValidator($method);
         $validator->setProvider('entity', $entity);
 
         return $this->_validator[$key] = $validator;
@@ -477,12 +601,13 @@ class EntityContext implements ContextInterface
      * Get the table instance from a property path
      *
      * @param array $parts Each one of the parts in a path for a field name
-     * @param bool $rootFallback Whether or not to fallback to the root entity.
-     * @return \Cake\ORM\Table|bool Table instance or false
+     * @param bool $fallback Whether or not to fallback to the last found table
+     *  when a non-existent field/property is being encountered.
+     * @return \Cake\ORM\Table|false Table instance or false
      */
-    protected function _getTable($parts, $rootFallback = true)
+    protected function _getTable($parts, $fallback = true)
     {
-        if (count($parts) === 1) {
+        if (!is_array($parts) || count($parts) === 1) {
             return $this->_tables[$this->_rootName];
         }
 
@@ -500,16 +625,26 @@ class EntityContext implements ContextInterface
         }
 
         $table = $this->_tables[$this->_rootName];
+        $assoc = null;
         foreach ($normalized as $part) {
-            $assoc = $table->associations()->getByProperty($part);
-            if (!$assoc && $rootFallback) {
+            if ($part === '_joinData') {
+                if ($assoc) {
+                    $table = $assoc->junction();
+                    $assoc = null;
+                    continue;
+                }
+            } else {
+                $assoc = $table->associations()->getByProperty($part);
+            }
+
+            if (!$assoc && $fallback) {
                 break;
             }
-            if (!$assoc && !$rootFallback) {
+            if (!$assoc && !$fallback) {
                 return false;
             }
 
-            $table = $assoc->target();
+            $table = $assoc->getTarget();
         }
 
         return $this->_tables[$path] = $table;
@@ -519,7 +654,7 @@ class EntityContext implements ContextInterface
      * Get the abstract field type for a given field name.
      *
      * @param string $field A dot separated path to get a schema type for.
-     * @return null|string An abstract data type or null.
+     * @return string|null An abstract data type or null.
      * @see \Cake\Database\Type
      */
     public function type($field)
@@ -540,7 +675,7 @@ class EntityContext implements ContextInterface
     {
         $parts = explode('.', $field);
         $table = $this->_getTable($parts);
-        $column = (array)$table->getSchema()->column(array_pop($parts));
+        $column = (array)$table->getSchema()->getColumn(array_pop($parts));
         $whitelist = ['length' => null, 'precision' => null];
 
         return array_intersect_key($column, $whitelist);
@@ -566,10 +701,22 @@ class EntityContext implements ContextInterface
     public function error($field)
     {
         $parts = explode('.', $field);
-        $entity = $this->entity($parts);
+        try {
+            list($entity, $remainingParts) = $this->leafEntity($parts);
+        } catch (RuntimeException $e) {
+            return [];
+        }
+        if (count($remainingParts) === 0) {
+            return $entity->getErrors();
+        }
 
         if ($entity instanceof EntityInterface) {
-            return $entity->errors(array_pop($parts));
+            $error = $entity->getError(implode('.', $remainingParts));
+            if ($error) {
+                return $error;
+            }
+
+            return $entity->getError(array_pop($parts));
         }
 
         return [];

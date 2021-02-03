@@ -1,21 +1,21 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         3.0.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Database\Schema;
 
+use Cake\Database\Connection;
 use Cake\Database\Exception;
-use Cake\Datasource\ConnectionInterface;
 use PDOException;
 
 /**
@@ -26,11 +26,10 @@ use PDOException;
  */
 class Collection
 {
-
     /**
      * Connection object
      *
-     * @var \Cake\Datasource\ConnectionInterface
+     * @var \Cake\Database\Connection
      */
     protected $_connection;
 
@@ -44,18 +43,18 @@ class Collection
     /**
      * Constructor.
      *
-     * @param \Cake\Datasource\ConnectionInterface $connection The connection instance.
+     * @param \Cake\Database\Connection $connection The connection instance.
      */
-    public function __construct(ConnectionInterface $connection)
+    public function __construct(Connection $connection)
     {
         $this->_connection = $connection;
-        $this->_dialect = $connection->driver()->schemaDialect();
+        $this->_dialect = $connection->getDriver()->schemaDialect();
     }
 
     /**
      * Get the list of tables available in the current connection.
      *
-     * @return array The list of tables in the connected database/schema.
+     * @return string[] The list of tables in the connected database/schema.
      */
     public function listTables()
     {
@@ -72,6 +71,8 @@ class Collection
 
     /**
      * Get the column metadata for a table.
+     *
+     * The name can include a database schema name in the form 'schema.table'.
      *
      * Caching will be applied if `cacheMetadata` key is present in the Connection
      * configuration options. Defaults to _cake_model_ when true.
@@ -92,7 +93,7 @@ class Collection
         if (strpos($name, '.')) {
             list($config['schema'], $name) = explode('.', $name);
         }
-        $table = new TableSchema($name);
+        $table = $this->_connection->getDriver()->newTableSchema($name);
 
         $this->_reflect('Column', $name, $config, $table);
         if (count($table->columns()) === 0) {
@@ -112,7 +113,7 @@ class Collection
      * @param string $stage The stage name.
      * @param string $name The table name.
      * @param array $config The config data.
-     * @param \Cake\Database\Schema\TableSchema $schema The table instance
+     * @param \Cake\Database\Schema\TableSchemaInterface $schema The table schema instance.
      * @return void
      * @throws \Cake\Database\Exception on query failure.
      */

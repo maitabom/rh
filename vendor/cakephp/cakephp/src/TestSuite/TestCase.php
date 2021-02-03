@@ -1,24 +1,27 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  * @since         1.2.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\TestSuite;
 
 use Cake\Core\App;
 use Cake\Core\Configure;
+use Cake\Core\Plugin;
 use Cake\Datasource\ConnectionManager;
 use Cake\Event\EventManager;
+use Cake\Http\BaseApplication;
+use Cake\ORM\Entity;
 use Cake\ORM\Exception\MissingTableClassException;
-use Cake\ORM\TableRegistry;
+use Cake\ORM\Locator\LocatorAwareTrait;
 use Cake\Routing\Router;
 use Cake\TestSuite\Constraint\EventFired;
 use Cake\TestSuite\Constraint\EventFiredWith;
@@ -31,6 +34,7 @@ use PHPUnit\Framework\TestCase as BaseTestCase;
  */
 abstract class TestCase extends BaseTestCase
 {
+    use LocatorAwareTrait;
 
     /**
      * The class responsible for managing the creation, loading and removing of fixtures
@@ -38,6 +42,13 @@ abstract class TestCase extends BaseTestCase
      * @var \Cake\TestSuite\Fixture\FixtureManager|null
      */
     public $fixtureManager;
+
+    /**
+     * Fixtures used by this test case.
+     *
+     * @var string[]|string|null
+     */
+    public $fixtures;
 
     /**
      * By default, all fixtures attached to this class will be truncated and reloaded after each test.
@@ -65,13 +76,6 @@ abstract class TestCase extends BaseTestCase
     protected $_configure = [];
 
     /**
-     * Path settings to restore at the end of the test.
-     *
-     * @var array
-     */
-    protected $_pathRestore = [];
-
-    /**
      * Overrides SimpleTestCase::skipIf to provide a boolean return value
      *
      * @param bool $shouldSkip Whether or not the test should be skipped.
@@ -85,6 +89,41 @@ abstract class TestCase extends BaseTestCase
         }
 
         return $shouldSkip;
+    }
+
+    /**
+     * Helper method for tests that needs to use error_reporting()
+     *
+     * @param int $errorLevel value of error_reporting() that needs to use
+     * @param callable $callable callable function that will receive asserts
+     * @return void
+     */
+    public function withErrorReporting($errorLevel, $callable)
+    {
+        $default = error_reporting();
+        error_reporting($errorLevel);
+        try {
+            $callable();
+        } finally {
+            error_reporting($default);
+        }
+    }
+
+    /**
+     * Helper method for check deprecation methods
+     *
+     * @param callable $callable callable function that will receive asserts
+     * @return void
+     */
+    public function deprecated($callable)
+    {
+        $errorLevel = error_reporting();
+        error_reporting(E_ALL ^ E_USER_DEPRECATED);
+        try {
+            $callable();
+        } finally {
+            error_reporting($errorLevel);
+        }
     }
 
     /**
@@ -120,13 +159,17 @@ abstract class TestCase extends BaseTestCase
             Configure::clear();
             Configure::write($this->_configure);
         }
-        TableRegistry::clear();
+        $this->getTableLocator()->clear();
+        $this->_configure = [];
+        $this->_tableLocator = null;
+        $this->fixtureManager = null;
     }
 
     /**
      * Chooses which fixtures to load for a given test
      *
      * Each parameter is a model name that corresponds to a fixture, i.e. 'Posts', 'Authors', etc.
+     * Passing no parameters will cause all fixtures on the test case to load.
      *
      * @return void
      * @see \Cake\TestSuite\TestCase::$autoFixtures
@@ -141,6 +184,72 @@ abstract class TestCase extends BaseTestCase
         foreach ($args as $class) {
             $this->fixtureManager->loadSingle($class, null, $this->dropTables);
         }
+
+        if (empty($args)) {
+            $autoFixtures = $this->autoFixtures;
+            $this->autoFixtures = true;
+            $this->fixtureManager->load($this);
+            $this->autoFixtures = $autoFixtures;
+        }
+    }
+
+    /**
+     * Load plugins into a simulated application.
+     *
+     * Useful to test how plugins being loaded/not loaded interact with other
+     * elements in CakePHP or applications.
+     *
+     * @param array $plugins List of Plugins to load.
+     * @return \Cake\Http\BaseApplication
+     */
+    public function loadPlugins(array $plugins = [])
+    {
+        /** @var \Cake\Http\BaseApplication $app */
+        $app = $this->getMockForAbstractClass(
+            BaseApplication::class,
+            ['']
+        );
+
+        foreach ($plugins as $pluginName => $config) {
+            if (is_array($config)) {
+                $app->addPlugin($pluginName, $config);
+            } else {
+                $app->addPlugin($config);
+            }
+        }
+        $app->pluginBootstrap();
+        $builder = Router::createRouteBuilder('/');
+        $app->pluginRoutes($builder);
+
+        return $app;
+    }
+
+    /**
+     * Remove plugins from the global plugin collection.
+     *
+     * Useful in test case teardown methods.
+     *
+     * @param string[] $names A list of plugins you want to remove.
+     * @return void
+     */
+    public function removePlugins(array $names = [])
+    {
+        $collection = Plugin::getCollection();
+        foreach ($names as $name) {
+            $collection->remove($name);
+        }
+    }
+
+    /**
+     * Clear all plugins from the global plugin collection.
+     *
+     * Useful in test case teardown methods.
+     *
+     * @return void
+     */
+    public function clearPlugins()
+    {
+        Plugin::getCollection()->clear();
     }
 
     /**
@@ -320,10 +429,7 @@ abstract class TestCase extends BaseTestCase
      */
     public function assertTags($string, $expected, $fullDebug = false)
     {
-        trigger_error(
-            'assertTags() is deprecated, use assertHtml() instead.',
-            E_USER_DEPRECATED
-        );
+        deprecationWarning('TestCase::assertTags() is deprecated. Use TestCase::assertHtml() instead.');
         $this->assertHtml($expected, $string, $fullDebug);
     }
 
@@ -388,7 +494,7 @@ abstract class TestCase extends BaseTestCase
                 $tags = (string)$tags;
             }
             $i++;
-            if (is_string($tags) && $tags{0} === '<') {
+            if (is_string($tags) && $tags[0] === '<') {
                 $tags = [substr($tags, 1) => []];
             } elseif (is_string($tags)) {
                 $tagsTrimmed = preg_replace('/\s+/m', '', $tags);
@@ -627,15 +733,162 @@ abstract class TestCase extends BaseTestCase
 // @codingStandardsIgnoreEnd
 
     /**
+     * @inheritDoc
+     */
+    public function getMockBuilder($className)
+    {
+        return new MockBuilder($this, $className);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    protected function getMockClass(
+        $originalClassName,
+        $methods = [],
+        array $arguments = [],
+        $mockClassName = '',
+        $callOriginalConstructor = false,
+        $callOriginalClone = true,
+        $callAutoload = true,
+        $cloneArguments = false
+    ) {
+        MockBuilder::setSupressedErrorHandler();
+
+        try {
+            return parent::getMockClass(
+                $originalClassName,
+                $methods,
+                $arguments,
+                $mockClassName,
+                $callOriginalConstructor,
+                $callOriginalClone,
+                $callAutoload,
+                $cloneArguments
+            );
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    /**
+     * @inheritDoc
+     */
+    protected function getMockForTrait(
+        $traitName,
+        array $arguments = [],
+        $mockClassName = '',
+        $callOriginalConstructor = true,
+        $callOriginalClone = true,
+        $callAutoload = true,
+        $mockedMethods = [],
+        $cloneArguments = false
+    ) {
+        MockBuilder::setSupressedErrorHandler();
+
+        try {
+            return parent::getMockForTrait(
+                $traitName,
+                $arguments,
+                $mockClassName,
+                $callOriginalConstructor,
+                $callOriginalClone,
+                $callAutoload,
+                $mockedMethods,
+                $cloneArguments
+            );
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    /**
+     * @inheritDoc
+     */
+    protected function getMockForAbstractClass(
+        $originalClassName,
+        array $arguments = [],
+        $mockClassName = '',
+        $callOriginalConstructor = true,
+        $callOriginalClone = true,
+        $callAutoload = true,
+        $mockedMethods = [],
+        $cloneArguments = false
+    ) {
+        MockBuilder::setSupressedErrorHandler();
+
+        try {
+            return parent::getMockForAbstractClass(
+                $originalClassName,
+                $arguments,
+                $mockClassName,
+                $callOriginalConstructor,
+                $callOriginalClone,
+                $callAutoload,
+                $mockedMethods,
+                $cloneArguments
+            );
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    /**
      * Mock a model, maintain fixtures and table association
      *
      * @param string $alias The model to get a mock for.
-     * @param mixed $methods The list of methods to mock
+     * @param string[]|null $methods The list of methods to mock
      * @param array $options The config data for the mock's constructor.
      * @throws \Cake\ORM\Exception\MissingTableClassException
      * @return \Cake\ORM\Table|\PHPUnit_Framework_MockObject_MockObject
      */
-    public function getMockForModel($alias, array $methods = [], array $options = [])
+    public function getMockForModel($alias, $methods = [], array $options = [])
+    {
+        /** @var \Cake\ORM\Table $className */
+        $className = $this->_getTableClassName($alias, $options);
+        $connectionName = $className::defaultConnectionName();
+        $connection = ConnectionManager::get($connectionName);
+
+        $locator = $this->getTableLocator();
+
+        list(, $baseClass) = pluginSplit($alias);
+        $options += ['alias' => $baseClass, 'connection' => $connection];
+        $options += $locator->getConfig($alias);
+
+        /** @var \Cake\ORM\Table|\PHPUnit_Framework_MockObject_MockObject $mock */
+        $mock = $this->getMockBuilder($className)
+            ->setMethods($methods)
+            ->setConstructorArgs([$options])
+            ->getMock();
+
+        if (empty($options['entityClass']) && $mock->getEntityClass() === Entity::class) {
+            $parts = explode('\\', $className);
+            $entityAlias = Inflector::classify(Inflector::underscore(substr(array_pop($parts), 0, -5)));
+            $entityClass = implode('\\', array_slice($parts, 0, -1)) . '\\Entity\\' . $entityAlias;
+            if (class_exists($entityClass)) {
+                $mock->setEntityClass($entityClass);
+            }
+        }
+
+        if (stripos($mock->getTable(), 'mock') === 0) {
+            $mock->setTable(Inflector::tableize($baseClass));
+        }
+
+        $locator->set($baseClass, $mock);
+        $locator->set($alias, $mock);
+
+        return $mock;
+    }
+
+    /**
+     * Gets the class name for the table.
+     *
+     * @param string $alias The model to get a mock for.
+     * @param array $options The config data for the mock's constructor.
+     * @return string
+     * @throws \Cake\ORM\Exception\MissingTableClassException
+     */
+    protected function _getTableClassName($alias, array $options)
     {
         if (empty($options['className'])) {
             $class = Inflector::camelize($alias);
@@ -646,34 +899,70 @@ abstract class TestCase extends BaseTestCase
             $options['className'] = $className;
         }
 
-        $connectionName = $options['className']::defaultConnectionName();
-        $connection = ConnectionManager::get($connectionName);
+        return $options['className'];
+    }
 
-        list(, $baseClass) = pluginSplit($alias);
-        $options += ['alias' => $baseClass, 'connection' => $connection];
-        $options += TableRegistry::config($alias);
+    /**
+     * Set the app namespace
+     *
+     * @param string $appNamespace The app namespace, defaults to "TestApp".
+     * @return void
+     */
+    public static function setAppNamespace($appNamespace = 'TestApp')
+    {
+        Configure::write('App.namespace', $appNamespace);
+    }
 
-        $mock = $this->getMockBuilder($options['className'])
-            ->setMethods($methods)
-            ->setConstructorArgs([$options])
-            ->getMock();
-
-        if (empty($options['entityClass']) && $mock->entityClass() === '\Cake\ORM\Entity') {
-            $parts = explode('\\', $options['className']);
-            $entityAlias = Inflector::singularize(substr(array_pop($parts), 0, -5));
-            $entityClass = implode('\\', array_slice($parts, 0, -1)) . '\Entity\\' . $entityAlias;
-            if (class_exists($entityClass)) {
-                $mock->entityClass($entityClass);
-            }
+    /**
+     * Adds a fixture to this test case.
+     *
+     * Examples:
+     * - core.Tags
+     * - app.MyRecords
+     * - plugin.MyPluginName.MyModelName
+     *
+     * Use this method inside your test cases' {@link getFixtures()} method
+     * to build up the fixture list.
+     *
+     * @param string $fixture Fixture
+     * @return $this
+     */
+    protected function addFixture($fixture)
+    {
+        if (!isset($this->fixtures)) {
+            $this->fixtures = [];
+        } elseif (is_string($this->fixtures)) {
+            deprecationWarning(
+                'Setting fixtures as string is deprecated and will be removed in 4.0.' .
+                ' Set TestCase::$fixtures as array instead.'
+            );
+            $this->fixtures = array_map('trim', explode(',', $this->fixtures));
         }
 
-        if (stripos($mock->getTable(), 'mock') === 0) {
-            $mock->setTable(Inflector::tableize($baseClass));
+        $this->fixtures[] = $fixture;
+
+        return $this;
+    }
+
+    /**
+     * Gets fixtures.
+     *
+     * @return array
+     */
+    public function getFixtures()
+    {
+        if (!isset($this->fixtures)) {
+            return [];
+        }
+        if (is_string($this->fixtures)) {
+            deprecationWarning(
+                'Setting fixtures as string is deprecated and will be removed in 4.0.' .
+                ' Set TestCase::$fixtures as array instead.'
+            );
+
+            return array_map('trim', explode(',', $this->fixtures));
         }
 
-        TableRegistry::set($baseClass, $mock);
-        TableRegistry::set($alias, $mock);
-
-        return $mock;
+        return $this->fixtures;
     }
 }

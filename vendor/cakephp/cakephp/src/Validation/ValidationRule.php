@@ -4,17 +4,17 @@
  *
  * Provides the Model validation logic.
  *
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         2.2.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Validation;
 
@@ -26,7 +26,6 @@ use InvalidArgumentException;
  */
 class ValidationRule
 {
-
     /**
      * The method to be called for a given scope
      *
@@ -105,7 +104,7 @@ class ValidationRule
      *   new record
      * - data: The full data that was passed to the validation process
      * - field: The name of the field that is being processed
-     * @return bool|string
+     * @return bool|string|array
      * @throws \InvalidArgumentException when the supplied rule is not a valid
      * callable for the configured scope
      */
@@ -134,7 +133,7 @@ class ValidationRule
         }
 
         if ($this->_pass) {
-            $args = array_merge([$value], $this->_pass, [$context]);
+            $args = array_values(array_merge([$value], $this->_pass, [$context]));
             $result = $callable(...$args);
         } else {
             $result = $callable($value, $context);
@@ -193,7 +192,7 @@ class ValidationRule
                 $this->_pass = array_slice($value, 1);
                 $value = array_shift($value);
             }
-            if (in_array($key, ['rule', 'on', 'message', 'last', 'provider', 'pass'])) {
+            if (in_array($key, ['rule', 'on', 'message', 'last', 'provider', 'pass'], true)) {
                 $this->{"_$key"} = $value;
             }
         }

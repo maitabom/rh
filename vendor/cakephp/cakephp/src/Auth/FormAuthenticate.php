@@ -1,17 +1,16 @@
 <?php
 /**
- *
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         2.0.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Auth;
 
@@ -19,25 +18,33 @@ use Cake\Http\Response;
 use Cake\Http\ServerRequest;
 
 /**
- * An authentication adapter for AuthComponent. Provides the ability to authenticate using POST
- * data. Can be used by configuring AuthComponent to use it via the AuthComponent::$authenticate config.
+ * Form authentication adapter for AuthComponent.
+ *
+ * Allows you to authenticate users based on form POST data.
+ * Usually, this is a login form that users enter information into.
+ *
+ * ### Using Form auth
+ *
+ * Load `AuthComponent` in your controller's `initialize()` and add 'Form' in 'authenticate' key
  *
  * ```
- *  $this->Auth->authenticate = [
- *      'Form' => [
- *          'finder' => ['auth' => ['some_finder_option' => 'some_value']]
- *      ]
- *  ]
+ * $this->loadComponent('Auth', [
+ *     'authenticate' => [
+ *         'Form' => [
+ *             'fields' => ['username' => 'email', 'password' => 'passwd'],
+ *             'finder' => 'auth',
+ *         ]
+ *     ]
+ * ]);
  * ```
  *
- * When configuring FormAuthenticate you can pass in config to which fields, model and additional conditions
- * are used. See FormAuthenticate::$_config for more information.
+ * When configuring FormAuthenticate you can pass in config to which fields, model and finder
+ * are used. See `BaseAuthenticate::$_defaultConfig` for more information.
  *
- * @see \Cake\Controller\Component\AuthComponent::$authenticate
+ * @see https://book.cakephp.org/3/en/controllers/components/authentication.html
  */
 class FormAuthenticate extends BaseAuthenticate
 {
-
     /**
      * Checks the fields to ensure they are supplied.
      *
@@ -64,7 +71,7 @@ class FormAuthenticate extends BaseAuthenticate
      *
      * @param \Cake\Http\ServerRequest $request The request that contains login information.
      * @param \Cake\Http\Response $response Unused response object.
-     * @return mixed False on login failure. An array of User data on success.
+     * @return array|false False on login failure. An array of User data on success.
      */
     public function authenticate(ServerRequest $request, Response $response)
     {

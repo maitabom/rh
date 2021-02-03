@@ -1,22 +1,22 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         2.0.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\Auth;
 
 use Cake\Controller\ComponentRegistry;
-use Cake\Core\Configure;
 use Cake\Http\ServerRequest;
+use Cake\Utility\Security;
 
 /**
  * Digest Authentication adapter for AuthComponent.
@@ -25,26 +25,26 @@ use Cake\Http\ServerRequest;
  *
  * ### Using Digest auth
  *
- * In your controller's components array, add auth + the required config
+ * Load `AuthComponent` in your controller's `initialize()` and add 'Digest' in 'authenticate' key
+ *
  * ```
- *  public $components = [
- *      'Auth' => [
- *          'authenticate' => ['Digest']
- *      ]
- *  ];
+ *  $this->loadComponent('Auth', [
+ *      'authenticate' => ['Digest'],
+ *      'storage' => 'Memory',
+ *      'unauthorizedRedirect' => false,
+ *  ]);
  * ```
  *
- * You should also set `AuthComponent::$sessionKey = false;` in your AppController's
- * beforeFilter() to prevent CakePHP from sending a session cookie to the client.
+ * You should set `storage` to `Memory` to prevent CakePHP from sending a
+ * session cookie to the client.
  *
- * Since HTTP Digest Authentication is stateless you don't need a login() action
+ * You should set `unauthorizedRedirect` to `false`. This causes `AuthComponent` to
+ * throw a `ForbiddenException` exception instead of redirecting to another page.
+ *
+ * Since HTTP Digest Authentication is stateless you don't need call `setUser()`
  * in your controller. The user credentials will be checked on each request. If
  * valid credentials are not provided, required authentication headers will be sent
  * by this authentication provider which triggers the login dialog in the browser/client.
- *
- * You may also want to use `$this->Auth->unauthorizedRedirect = false;`.
- * This causes AuthComponent to throw a ForbiddenException exception instead of
- * redirecting to another page.
  *
  * ### Generating passwords compatible with Digest authentication.
  *
@@ -60,17 +60,18 @@ use Cake\Http\ServerRequest;
  * example `User.digest_pass` could be used for a digest password, while
  * `User.password` would store the password hash for use with other methods like
  * Basic or Form.
+ *
+ * @see https://book.cakephp.org/3/en/controllers/components/authentication.html
  */
 class DigestAuthenticate extends BasicAuthenticate
 {
-
     /**
      * Constructor
      *
      * Besides the keys specified in BaseAuthenticate::$_defaultConfig,
      * DigestAuthenticate uses the following extra keys:
      *
-     * - `secret` The secret to use for nonce validation. Defaults to Security.salt.
+     * - `secret` The secret to use for nonce validation. Defaults to Security::getSalt().
      * - `realm` The realm authentication is for, Defaults to the servername.
      * - `qop` Defaults to 'auth', no other values are supported at this time.
      * - `opaque` A string that must be returned unchanged by clients.
@@ -85,7 +86,7 @@ class DigestAuthenticate extends BasicAuthenticate
     {
         $this->setConfig([
             'nonceLifetime' => 300,
-            'secret' => Configure::read('Security.salt'),
+            'secret' => Security::getSalt(),
             'realm' => null,
             'qop' => 'auth',
             'opaque' => null,
@@ -98,7 +99,7 @@ class DigestAuthenticate extends BasicAuthenticate
      * Get a user based on information in the request. Used by cookie-less auth for stateless clients.
      *
      * @param \Cake\Http\ServerRequest $request Request object.
-     * @return mixed Either false or an array of user information
+     * @return array|false Either false or an array of user information
      */
     public function getUser(ServerRequest $request)
     {
@@ -120,8 +121,8 @@ class DigestAuthenticate extends BasicAuthenticate
         $password = $user[$field];
         unset($user[$field]);
 
-        $hash = $this->generateResponseHash($digest, $password, $request->env('ORIGINAL_REQUEST_METHOD'));
-        if ($digest['response'] === $hash) {
+        $hash = $this->generateResponseHash($digest, $password, $request->getEnv('ORIGINAL_REQUEST_METHOD'));
+        if (hash_equals($hash, $digest['response'])) {
             return $user;
         }
 
@@ -136,7 +137,7 @@ class DigestAuthenticate extends BasicAuthenticate
      */
     protected function _getDigest(ServerRequest $request)
     {
-        $digest = $request->env('PHP_AUTH_DIGEST');
+        $digest = $request->getEnv('PHP_AUTH_DIGEST');
         if (empty($digest) && function_exists('apache_request_headers')) {
             $headers = apache_request_headers();
             if (!empty($headers['Authorization']) && substr($headers['Authorization'], 0, 7) === 'Digest ') {
@@ -211,17 +212,17 @@ class DigestAuthenticate extends BasicAuthenticate
      * Generate the login headers
      *
      * @param \Cake\Http\ServerRequest $request Request object.
-     * @return string Headers for logging in.
+     * @return string[] Headers for logging in.
      */
     public function loginHeaders(ServerRequest $request)
     {
-        $realm = $this->_config['realm'] ?: $request->env('SERVER_NAME');
+        $realm = $this->_config['realm'] ?: $request->getEnv('SERVER_NAME');
 
         $options = [
             'realm' => $realm,
             'qop' => $this->_config['qop'],
             'nonce' => $this->generateNonce(),
-            'opaque' => $this->_config['opaque'] ?: md5($realm)
+            'opaque' => $this->_config['opaque'] ?: md5($realm),
         ];
 
         $digest = $this->_getDigest($request);
@@ -239,7 +240,9 @@ class DigestAuthenticate extends BasicAuthenticate
             }
         }
 
-        return 'WWW-Authenticate: Digest ' . implode(',', $opts);
+        return [
+            'WWW-Authenticate' => 'Digest ' . implode(',', $opts),
+        ];
     }
 
     /**
@@ -250,7 +253,8 @@ class DigestAuthenticate extends BasicAuthenticate
     protected function generateNonce()
     {
         $expiryTime = microtime(true) + $this->getConfig('nonceLifetime');
-        $signatureValue = md5($expiryTime . ':' . $this->getConfig('secret'));
+        $secret = $this->getConfig('secret');
+        $signatureValue = hash_hmac('sha256', $expiryTime . ':' . $secret, $secret);
         $nonceValue = $expiryTime . ':' . $signatureValue;
 
         return base64_encode($nonceValue);
@@ -276,7 +280,9 @@ class DigestAuthenticate extends BasicAuthenticate
         if ($expires < microtime(true)) {
             return false;
         }
+        $secret = $this->getConfig('secret');
+        $check = hash_hmac('sha256', $expires . ':' . $secret, $secret);
 
-        return md5($expires . ':' . $this->getConfig('secret')) === $checksum;
+        return hash_equals($check, $checksum);
     }
 }

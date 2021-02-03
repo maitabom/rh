@@ -1,16 +1,16 @@
 <?php
 /**
- * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * CakePHP(tm) : Rapid Development Framework (https://cakephp.org)
+ * Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
  *
  * Licensed under The MIT License
  * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
- * @link          http://cakephp.org CakePHP(tm) Project
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (https://cakefoundation.org)
+ * @link          https://cakephp.org CakePHP(tm) Project
  * @since         3.0.0
- * @license       http://www.opensource.org/licenses/mit-license.php MIT License
+ * @license       https://opensource.org/licenses/mit-license.php MIT License
  */
 namespace Cake\View\Helper;
 
@@ -22,7 +22,6 @@ use Cake\Utility\Text;
  */
 trait IdGeneratorTrait
 {
-
     /**
      * Prefix for id attribute.
      *
@@ -33,7 +32,7 @@ trait IdGeneratorTrait
     /**
      * A list of id suffixes used in the current rendering.
      *
-     * @var array
+     * @var string[]
      */
     protected $_idSuffixes = [];
 
@@ -59,7 +58,21 @@ trait IdGeneratorTrait
     protected function _id($name, $val)
     {
         $name = $this->_domId($name);
+        $suffix = $this->_idSuffix($val);
 
+        return trim($name . '-' . $suffix, '-');
+    }
+
+    /**
+     * Generate an ID suffix.
+     *
+     * Ensures that id's for a given set of fields are unique.
+     *
+     * @param string $val The ID attribute value.
+     * @return string Generated id suffix.
+     */
+    protected function _idSuffix($val)
+    {
         $idSuffix = mb_strtolower(str_replace(['/', '@', '<', '>', ' ', '"', '\''], '-', $val));
         $count = 1;
         $check = $idSuffix;
@@ -68,7 +81,7 @@ trait IdGeneratorTrait
         }
         $this->_idSuffixes[] = $check;
 
-        return trim($name . '-' . $check, '-');
+        return $check;
     }
 
     /**
